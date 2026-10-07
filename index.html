@@ -172,6 +172,19 @@
   }
   .link-small:active{ opacity:1; }
 
+  .suggest-box{
+    margin-top:10px; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+  }
+  .suggest-item{
+    padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--line);
+    transition:background-color .15s ease;
+  }
+  .suggest-item:last-child{ border-bottom:none; }
+  .suggest-item:active{ background:var(--panel-2); }
+  .suggest-item .code{ font-family:var(--mono); font-size:14px; font-weight:800; color:var(--text); }
+  .suggest-item .code b{ color:var(--accent); }
+  .suggest-item .desc{ font-size:11.5px; font-weight:700; color:var(--muted); margin-top:2px; }
+
   .btn{
     display:flex; align-items:center; justify-content:center;
     gap:8px;
@@ -195,7 +208,7 @@
 
   .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 
-  #reader, #readerReserva{
+  #reader, #readerReserva, #readerPreinv{
     width:100%;
     aspect-ratio:16/9;
     min-height:200px;
@@ -204,8 +217,8 @@
     background:#000;
     transition:opacity .3s ease;
   }
-  #reader video, #readerReserva video{ width:100%; height:100%; object-fit:cover; display:block; }
-  #reader canvas, #readerReserva canvas{ border-radius:10px; }
+  #reader video, #readerReserva video, #readerPreinv video{ width:100%; height:100%; object-fit:cover; display:block; }
+  #reader canvas, #readerReserva canvas, #readerPreinv canvas{ border-radius:10px; }
 
   .divider{
     display:flex; align-items:center; gap:10px;
@@ -582,6 +595,7 @@
       <button class="menu-item" id="menuRecents" type="button">🕘 Recientes</button>
       <button class="menu-item" id="menuReservas" type="button">📌 Reservas</button>
       <button class="menu-item" id="menuCarteles" type="button">🪧 Carteles</button>
+      <button class="menu-item" id="menuPreinv" type="button">📦 Pre Inventario</button>
     </div>
   </div>
   <h1 class="brand">LACOSTE</h1>
@@ -706,9 +720,10 @@
 
     <div class="card">
       <div class="row">
-        <input type="text" id="manualCode" placeholder="Código (usá * para lo que no sepas)" inputmode="text">
+        <input type="text" id="manualCode" placeholder="Código (usá * para lo que no sepas)" inputmode="text" autocomplete="off">
         <button class="btn btn-primary" id="btnManualSearch" style="width:auto; padding-left:22px; padding-right:22px;">Buscar</button>
       </div>
+      <div class="suggest-box" id="manualSuggest" style="display:none;"></div>
     </div>
 
     <label class="field" id="sortWrap" style="display:none;">
@@ -819,6 +834,43 @@
     <button class="btn btn-ghost" id="btnCartelesBack">Volver a buscar</button>
   </section>
 
+  <!-- PANTALLA 7: pre inventario -->
+  <section class="screen" id="screen-preinventario">
+    <div class="card">
+      <div class="reserva-form">
+        <div class="recents-title" style="margin-bottom:2px;">Pre Inventario</div>
+        <div class="hint">Escaneá o cargá los códigos de las prendas a las que les falta etiqueta. Cuando tengas los que necesites (hasta 18), descargá la imagen lista para imprimir y pegar.</div>
+
+        <div id="preinvReaderWrap" style="display:none;"><div id="readerPreinv"></div></div>
+        <button class="btn btn-primary" id="preinvScanBtn" type="button">Escanear código de barras</button>
+        <button class="btn btn-ghost" id="preinvStopBtn" type="button" style="display:none;">Detener cámara</button>
+
+        <div class="divider">o ingresalo manualmente</div>
+        <div class="row">
+          <input type="text" id="preinvCode" placeholder="Código del producto" inputmode="text" autocomplete="off">
+          <button class="btn btn-primary" id="preinvAddBtn" type="button" style="width:auto; padding-left:22px; padding-right:22px;">Agregar</button>
+        </div>
+        <div class="suggest-box" id="preinvSuggest" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="admin-users-row" style="display:flex; align-items:center; justify-content:space-between; border-bottom:none; padding-bottom:0;">
+        <div class="recents-title" style="margin-bottom:0;">Códigos cargados</div>
+        <span class="hint" id="preinvCount" style="margin:0;">0 / 18</span>
+      </div>
+      <div id="preinvList"></div>
+      <button class="btn btn-danger" id="preinvClearBtn" type="button" style="display:none; margin-top:10px;">Borrar todos</button>
+    </div>
+
+    <div class="card">
+      <canvas id="preinvCanvas" width="1240" height="1754" style="display:none;"></canvas>
+      <button class="btn btn-primary" id="preinvDownloadBtn" type="button" disabled>Descargar imagen (.png)</button>
+    </div>
+
+    <button class="btn btn-ghost" id="btnPreinvBack">Volver a buscar</button>
+  </section>
+
 </main>
 
 <script>
@@ -837,11 +889,12 @@ document.addEventListener("DOMContentLoaded", function(){
   };
 
   // Lector de códigos: nativo del sistema cuando está disponible (rápido, Android/Chrome)
-  // y ZXing como respaldo (siempre en iPhone/Safari, y en navegadores sin lector nativo).
-  var zxingReader = null;
-  var zxingControls = null;
+  // y zxing-wasm como respaldo (siempre en iPhone/Safari, y en navegadores sin lector nativo).
+  // zxing-wasm es el motor ZXing en C++ compilado a WebAssembly: mucho más preciso que la
+  // versión en JS puro que usábamos antes (@zxing/browser), sobre todo para leer códigos
+  // EAN-13 con la cámara del iPhone.
   var scanning = false;
-  var scanTarget = "search"; // "search" (buscador) o "reserva" (pantalla de reservas)
+  var scanTarget = "search"; // "search" (buscador), "reserva" o "preinv"
 
   // Estado del lector nativo (BarcodeDetector).
   var nativeDetector = null;
@@ -849,8 +902,22 @@ document.addEventListener("DOMContentLoaded", function(){
   var nativeRafId = null;
   var usingNative = false;
 
-  // Formatos de barras que nos interesan (se usan para acotar la búsqueda y que sea más rápido).
+  // Estado del lector zxing-wasm (cuando no hay BarcodeDetector nativo: iPhone/Safari y
+  // navegadores viejos). Usamos el mismo patrón de "bombeo de frames" que el lector nativo:
+  // dibujamos el video en un canvas oculto y le pasamos ese frame a zxing-wasm.
+  var wasmStream = null;
+  var wasmRafId = null;
+  var wasmCanvas = null;
+  var wasmCtx = null;
+  var wasmReaderOptions = null;
+  var usingWasm = false;
+
+  // Formatos de barras que nos interesan para el lector nativo (se usan para acotar la
+  // búsqueda y que sea más rápido).
   var COMMON_BARCODE_FORMATS = ["ean_13","ean_8","upc_a","upc_e","code_128","code_39","codabar","itf","qr_code"];
+
+  // Mismos formatos, pero con los nombres canónicos que usa zxing-wasm.
+  var WASM_BARCODE_FORMATS = ["EAN13","EAN8","UPCA","UPCE","Code128","Code39","Codabar","ITF","QRCode"];
 
   // Estado adicional de cámara.
   var cameraTrack = null;
@@ -864,7 +931,9 @@ document.addEventListener("DOMContentLoaded", function(){
   var LIB_URLS = {
     xlsx: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
     jsbarcode: "https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.3/JsBarcode.all.min.js",
-    zxing: "https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"
+    // zxing-wasm (build IIFE): registra la variable global ZXingWASM.
+    // El .wasm lo sirve automáticamente jsDelivr, no hace falta configurar nada más.
+    zxingWasm: "https://cdn.jsdelivr.net/npm/zxing-wasm@3/dist/iife/reader/index.js"
   };
   var libPromises = {};
   function loadLib(name){
@@ -1977,6 +2046,80 @@ document.addEventListener("DOMContentLoaded", function(){
     performSearch(code);
   }
 
+  // ---------- Predicción de código: sugiere códigos completos del catálogo
+  // ya cargado a medida que se escribe un prefijo (ej: "ph4014" -> "ph40142316603") ----------
+  var SUGGEST_MIN_CHARS = 3, SUGGEST_LIMIT = 8;
+
+  function codeSuggestions(prefix){
+    var pfx = prefix.toLowerCase();
+    var seen = {}, out = [];
+    for(var i = 0; i < state.items.length && out.length < SUGGEST_LIMIT; i++){
+      var it = state.items[i];
+      var cod = it.codigo || "", alt = it.alt || "";
+      var hit = cod.toLowerCase().indexOf(pfx) === 0 ? cod :
+                (alt && alt.toLowerCase().indexOf(pfx) === 0 ? alt : null);
+      if(!hit || seen[hit]) continue;
+      seen[hit] = true;
+      out.push({ code: hit, item: it });
+    }
+    return out;
+  }
+
+  function suggestItemLabel(item){
+    var parsed = parseCodeStructure(item.codigo) || {};
+    var bits = [];
+    if(item.desc) bits.push(item.desc);
+    if(parsed.talle) bits.push("Talle " + parsed.talle);
+    if(item.precio) bits.push(formatMoney(item.precio));
+    return bits.join(" · ");
+  }
+
+  function renderSuggestBox(boxEl, prefix, matches, onPick){
+    if(!matches.length){ boxEl.style.display = "none"; boxEl.innerHTML = ""; return; }
+    var re = new RegExp("^(" + escapeRegex(prefix) + ")", "i");
+    var html = "";
+    for(var i = 0; i < matches.length; i++){
+      var m = matches[i];
+      var codeHtml = escapeHtml(m.code).replace(re, "<b>$1</b>");
+      var label = suggestItemLabel(m.item);
+      html += '<div class="suggest-item" data-suggest-idx="' + i + '">' +
+        '<div class="code">' + codeHtml + '</div>' +
+        (label ? '<div class="desc">' + escapeHtml(label) + '</div>' : '') +
+        '</div>';
+    }
+    boxEl.innerHTML = html;
+    boxEl.style.display = "block";
+    Array.prototype.forEach.call(boxEl.querySelectorAll("[data-suggest-idx]"), function(el){
+      el.addEventListener("mousedown", function(e){
+        e.preventDefault(); // evita que el blur del input cierre la caja antes del click
+        var idx = parseInt(el.getAttribute("data-suggest-idx"), 10);
+        onPick(matches[idx].code);
+        boxEl.style.display = "none";
+        boxEl.innerHTML = "";
+      });
+    });
+  }
+
+  function wireCodeAutocomplete(inputId, boxId, onPick){
+    var input = $(inputId), box = $(boxId);
+    if(!input || !box) return;
+    input.addEventListener("input", function(){
+      var val = input.value.trim();
+      if(val.length < SUGGEST_MIN_CHARS || !state.items.length){
+        box.style.display = "none"; box.innerHTML = "";
+        return;
+      }
+      renderSuggestBox(box, val, codeSuggestions(val), onPick || function(code){ input.value = code; });
+    });
+    input.addEventListener("blur", function(){
+      // Pequeño delay para que el mousedown de la sugerencia llegue a procesarse antes de ocultar.
+      setTimeout(function(){ box.style.display = "none"; box.innerHTML = ""; }, 150);
+    });
+  }
+
+  wireCodeAutocomplete("manualCode", "manualSuggest");
+  wireCodeAutocomplete("preinvCode", "preinvSuggest");
+
   // ---------- Compartir (WhatsApp / código de barra) ----------
 
   var shareItem = null;
@@ -2007,9 +2150,9 @@ document.addEventListener("DOMContentLoaded", function(){
 
   // Dibuja las barras del valor indicado. Si son 13 dígitos válidos usa EAN-13,
   // en cualquier otro caso usa Code 128 (acepta letras, números y guiones).
-  function drawBarcodeCanvas(value){
+  function drawBarcodeCanvas(value, barWidth, barHeight){
     var bc = document.createElement("canvas");
-    var opts = { displayValue:false, margin:0, width:3, height:120, background:"#ffffff", lineColor:"#000000" };
+    var opts = { displayValue:false, margin:0, width:(barWidth || 3), height:(barHeight || 120), background:"#ffffff", lineColor:"#000000" };
     if(/^\d{13}$/.test(value)){
       try{
         opts.format = "EAN13";
@@ -2704,6 +2847,196 @@ document.addEventListener("DOMContentLoaded", function(){
   });
   $("reservaStopBtn").addEventListener("click", function(){ stopScanning(); });
   $("reservaAddBtn").addEventListener("click", function(){ reservaLookup($("reservaCode").value); });
+
+  // ---------- Pre Inventario: etiquetas de códigos de barra para pegar en prendas sueltas ----------
+  // Tamaño de cada etiqueta: 5,72 cm (ancho) x 3,97 cm (alto), a 150dpi (misma resolución
+  // que ya usamos para los carteles). Grilla de 3 columnas x 6 filas = 18 por hoja A4.
+  var PREINV_MAX = 18;
+  var PREINV_COLS = 3, PREINV_ROWS = 6;
+  var PREINV_CELL_W = 338, PREINV_CELL_H = 234; // px a 150dpi ≈ 5,72cm x 3,97cm
+  var PREINV_W = 1240, PREINV_H = 1754;          // hoja A4 a 150dpi (igual que CARTEL_W/H)
+  var preinvCodes = [];
+
+  function preinvSyncScanUi(){
+    var on = scanning && scanTarget === "preinv";
+    $("preinvReaderWrap").style.display = on ? "block" : "none";
+    $("preinvScanBtn").style.display = on ? "none" : "block";
+    $("preinvStopBtn").style.display = on ? "block" : "none";
+    $("preinvScanBtn").disabled = preinvCodes.length >= PREINV_MAX;
+  }
+
+  function preinvRenderList(){
+    var box = $("preinvList");
+    if(!preinvCodes.length){
+      box.innerHTML = '<div class="hint">Todavía no agregaste códigos.</div>';
+    } else {
+      var html = "";
+      for(var i = 0; i < preinvCodes.length; i++){
+        html += '<div class="admin-users-row" style="display:flex; align-items:center; justify-content:space-between;">' +
+          '<span class="result-code">' + escapeHtml(preinvCodes[i]) + '</span>' +
+          '<span class="link-small" style="opacity:.8; padding:2px 8px;" data-preinv-remove="' + i + '">✕ quitar</span>' +
+          '</div>';
+      }
+      box.innerHTML = html;
+    }
+    $("preinvCount").textContent = preinvCodes.length + " / " + PREINV_MAX;
+    $("preinvDownloadBtn").disabled = preinvCodes.length === 0;
+    $("preinvClearBtn").style.display = preinvCodes.length ? "block" : "none";
+    preinvSyncScanUi();
+  }
+
+  function preinvAdd(codeRaw){
+    var code = String(codeRaw || "").trim();
+    if(!code) return;
+    if(preinvCodes.length >= PREINV_MAX){
+      showToast("Llegaste al máximo de " + PREINV_MAX + " códigos. Descargá o borrá alguno para seguir.", "error");
+      return;
+    }
+    preinvCodes.push(code);
+    preinvRenderList();
+    showToast("Código agregado (" + preinvCodes.length + "/" + PREINV_MAX + ")", "ok");
+  }
+
+  function preinvRemove(idx){
+    preinvCodes.splice(idx, 1);
+    preinvRenderList();
+  }
+
+  function preinvClear(){
+    preinvCodes = [];
+    preinvRenderList();
+  }
+
+  // Igual que en "Compartir > Descargar código de barras": barra de hasta 3px de
+  // ancho por módulo y 120px de alto. Medimos primero a módulo 1 para saber cuántos
+  // módulos tiene el código, y usamos el ancho más grueso posible (hasta 3) que
+  // entre en el espacio disponible, sin volver a escalar la imagen después
+  // (eso es lo que la hacía ilegible para la cámara del celu).
+  function preinvBarcodeCanvas(code, targetW, targetH){
+    var probe = drawBarcodeCanvas(code, 1, targetH);
+    var modules = probe.width || 1;
+    var w = Math.min(3, Math.floor(targetW / modules));
+    if(w < 1) w = 1;
+    return drawBarcodeCanvas(code, w, targetH);
+  }
+
+  // Dibuja una etiqueta (código + barras) dentro de la celda [x,y,cw,ch], con guía
+  // de corte punteada. Si no hay código, deja la celda vacía (solo la guía).
+  function preinvDrawCell(ctx, code, x, y, cw, ch){
+    var pad = 14;
+    var fontFamily = '"Proxima Nova","Montserrat",Helvetica,Arial,sans-serif';
+
+    ctx.save();
+    ctx.strokeStyle = "#BFBFBF";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+    ctx.setLineDash([]);
+
+    if(code){
+      ctx.fillStyle = "#000000";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+
+      var fsize = 20;
+      ctx.font = "bold " + fsize + "px " + fontFamily;
+      var maxTextW = cw - pad * 2;
+      while(ctx.measureText(code).width > maxTextW && fsize > 10){
+        fsize -= 1;
+        ctx.font = "bold " + fsize + "px " + fontFamily;
+      }
+      ctx.fillText(code, x + cw / 2, y + pad);
+
+      var textH = fsize + 10, gap = 8;
+      var areaH = ch - pad * 2 - textH - gap;
+      var areaW = cw - pad * 2;
+
+      var bc = preinvBarcodeCanvas(code, areaW, 120);
+      var bx = Math.round(x + (cw - bc.width) / 2);
+      var by = Math.round(y + pad + textH + gap + Math.max(0, (areaH - bc.height) / 2));
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(bc, bx, by);
+    }
+    ctx.restore();
+  }
+
+  function preinvRenderCanvas(){
+    var cv = $("preinvCanvas");
+    var ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, PREINV_W, PREINV_H);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, PREINV_W, PREINV_H);
+
+    var marginX = Math.round((PREINV_W - PREINV_COLS * PREINV_CELL_W) / 2);
+    var marginY = Math.round((PREINV_H - PREINV_ROWS * PREINV_CELL_H) / 2);
+
+    for(var r = 0; r < PREINV_ROWS; r++){
+      for(var c = 0; c < PREINV_COLS; c++){
+        var idx = r * PREINV_COLS + c;
+        var code = preinvCodes[idx] || null;
+        var x = marginX + c * PREINV_CELL_W, y = marginY + r * PREINV_CELL_H;
+        preinvDrawCell(ctx, code, x, y, PREINV_CELL_W, PREINV_CELL_H);
+      }
+    }
+  }
+
+  function preinvDownload(){
+    if(!preinvCodes.length){ showToast("Agregá al menos un código.", "error"); return; }
+    preinvRenderCanvas();
+    $("preinvCanvas").toBlob(function(blob){
+      if(!blob){ showToast("No se pudo generar la imagen.", "error"); return; }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      var d = new Date();
+      a.download = "pre-inventario-" + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + "-" + pad2(d.getHours()) + pad2(d.getMinutes()) + ".png";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+    }, "image/png");
+  }
+
+  function openPreinv(){
+    closeMenu();
+    if(scanning) stopScanning();
+    preinvRenderList();
+    showScreen("screen-preinventario");
+  }
+
+  $("menuPreinv").addEventListener("click", function(e){ e.stopPropagation(); openPreinv(); });
+  $("btnPreinvBack").addEventListener("click", function(){
+    if(scanning) stopScanning();
+    showScreen("screen-scan");
+  });
+  $("preinvScanBtn").addEventListener("click", function(){
+    if(preinvCodes.length >= PREINV_MAX){
+      showToast("Llegaste al máximo de " + PREINV_MAX + " códigos.", "error");
+      return;
+    }
+    if(scanning) stopScanning();
+    scanTarget = "preinv";
+    $("preinvReaderWrap").style.display = "block";
+    startScanning().then(function(){
+      if(!scanning) scanTarget = "search";
+      preinvSyncScanUi();
+    });
+  });
+  $("preinvStopBtn").addEventListener("click", function(){ stopScanning(); });
+  $("preinvAddBtn").addEventListener("click", function(){
+    preinvAdd($("preinvCode").value);
+    $("preinvCode").value = "";
+    $("preinvCode").focus();
+  });
+  $("preinvCode").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); $("preinvAddBtn").click(); }
+  });
+  $("preinvList").addEventListener("click", function(e){
+    var t = e.target.closest("[data-preinv-remove]");
+    if(!t) return;
+    preinvRemove(parseInt(t.getAttribute("data-preinv-remove"), 10));
+  });
+  $("preinvClearBtn").addEventListener("click", function(){
+    if(confirm("¿Borrar todos los códigos cargados?")) preinvClear();
+  });
+  $("preinvDownloadBtn").addEventListener("click", preinvDownload);
   $("reservaCode").addEventListener("keydown", function(e){
     if(e.key === "Enter") reservaLookup($("reservaCode").value);
   });
@@ -2859,7 +3192,9 @@ document.addEventListener("DOMContentLoaded", function(){
   }
 
   function getReaderEl(){
-    return scanTarget === "reserva" ? $("readerReserva") : $("reader");
+    if(scanTarget === "reserva") return $("readerReserva");
+    if(scanTarget === "preinv") return $("readerPreinv");
+    return $("reader");
   }
 
   // Qué hacer con un código leído por la cámara, según desde dónde se abrió.
@@ -2867,6 +3202,17 @@ document.addEventListener("DOMContentLoaded", function(){
     if(scanTarget === "reserva"){
       stopScanning();
       reservaLookup(text);
+    } else if(scanTarget === "preinv"){
+      // Modo continuo: no apagamos la cámara, seguimos leyendo códigos seguidos.
+      if(preinvCodes.length >= PREINV_MAX){
+        stopScanning();
+        showToast("Llegaste al máximo de " + PREINV_MAX + " códigos.", "error");
+        return;
+      }
+      preinvAdd(text);
+      if(preinvCodes.length >= PREINV_MAX){
+        stopScanning();
+      }
     } else {
       performSearch(text);
       stopScanning();
@@ -2931,25 +3277,17 @@ document.addEventListener("DOMContentLoaded", function(){
     return checkDigit === Number(value.charAt(12));
   }
 
-  function handleDecodedResult(result){
-    if(!result) return;
+  // Resultado leído por zxing-wasm (mismo formato de manejo que handleNativeResult).
+  function handleWasmResult(barcode){
+    if(!barcode) return;
 
-    var decodedText = result.getText ? result.getText() : String(result.text || result);
-    decodedText = String(decodedText || "").replace(/\s/g,"");
-
+    var decodedText = String(barcode.text || "").replace(/\s/g,"");
     if(!decodedText) return;
 
-    // En iPhone aceptamos exclusivamente EAN-13.
+    // En iPhone aceptamos exclusivamente EAN-13 (defensa extra, además del filtro
+    // por "formats" que ya le pasamos a readBarcodes).
     if(isIOS()){
-      var formatOK = true;
-
-      try{
-        var barcodeFormat = result.getBarcodeFormat ? result.getBarcodeFormat() : null;
-        if(ZXingBrowser.BarcodeFormat && barcodeFormat !== null){
-          formatOK = barcodeFormat === ZXingBrowser.BarcodeFormat.EAN_13;
-        }
-      }catch(e){}
-
+      var formatOK = !barcode.format || barcode.format === "EAN13";
       if(!formatOK || !validEAN13(decodedText)) return;
     }
 
@@ -2967,6 +3305,95 @@ document.addEventListener("DOMContentLoaded", function(){
     }
 
     afterScan(decodedText);
+  }
+
+  // Lector de respaldo con zxing-wasm: igual que el lector nativo (BarcodeDetector),
+  // bombeamos frames del video a un canvas oculto y se los pasamos a readBarcodes.
+  // Se usa siempre en iPhone/Safari (no tiene BarcodeDetector nativo) y como respaldo
+  // en cualquier otro navegador que tampoco lo tenga.
+  async function startWasmScan(video){
+    if(typeof ZXingWASM === "undefined"){
+      try{ await loadLib("zxingWasm"); }catch(e){}
+    }
+    if(typeof ZXingWASM === "undefined" || !ZXingWASM.readBarcodes){
+      throw new Error("No se pudo cargar zxing-wasm");
+    }
+
+    /*
+      Android sin lector nativo / navegadores viejos:
+      - Se acota a los formatos de barras que realmente usamos (más rápido que
+        dejar que el lector pruebe todos los formatos posibles en cada frame).
+
+      iPhone/iPad:
+      - Se limita REALMENTE a EAN-13 (evita que pruebe QR, Code128, Code39, etc.
+        en cada frame, que es lo que hacía más lenta/floja la lectura antes).
+    */
+    wasmReaderOptions = {
+      tryHarder: true,
+      maxNumberOfSymbols: 1,
+      formats: isIOS() ? ["EAN13"] : WASM_BARCODE_FORMATS
+    };
+
+    var constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 },
+        frameRate: { ideal: 30, max: 30 }
+      }
+    };
+
+    // En iPhone damos un poco más de prioridad a la cámara trasera.
+    if(isIOS()){
+      constraints.video.facingMode = { exact: "environment" };
+    }
+
+    wasmStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = wasmStream;
+    await video.play().catch(function(){});
+
+    cameraTrack = getCameraTrack(video);
+    await applyCameraOptimizations(video);
+
+    // Un pequeño delay ayuda a que el autofocus de iPhone tome el código.
+    setTimeout(function(){ refocusCamera(); }, 350);
+
+    if(!wasmCanvas){
+      wasmCanvas = document.createElement("canvas");
+      wasmCtx = wasmCanvas.getContext("2d", { willReadFrequently: true });
+    }
+
+    usingWasm = true;
+    scanning = true;
+    $("btnStartScan").style.display = "none";
+    $("btnStopScan").style.display = "block";
+
+    var busy = false;
+    function loop(){
+      if(!scanning || !usingWasm) return;
+      if(!busy && video.readyState >= 2 && video.videoWidth){
+        busy = true;
+        if(wasmCanvas.width !== video.videoWidth || wasmCanvas.height !== video.videoHeight){
+          wasmCanvas.width = video.videoWidth;
+          wasmCanvas.height = video.videoHeight;
+        }
+        wasmCtx.drawImage(video, 0, 0, wasmCanvas.width, wasmCanvas.height);
+        var frame;
+        try{
+          frame = wasmCtx.getImageData(0, 0, wasmCanvas.width, wasmCanvas.height);
+        }catch(e){ busy = false; wasmRafId = requestAnimationFrame(loop); return; }
+
+        ZXingWASM.readBarcodes(frame, wasmReaderOptions).then(function(results){
+          busy = false;
+          if(results && results.length){
+            handleWasmResult(results[0]);
+          }
+        }).catch(function(){ busy = false; });
+      }
+      wasmRafId = requestAnimationFrame(loop);
+    }
+    wasmRafId = requestAnimationFrame(loop);
   }
 
   async function startScanning(){
@@ -2997,113 +3424,23 @@ document.addEventListener("DOMContentLoaded", function(){
         if($("cameraTools")){ $("cameraTools").style.display = "flex"; }
         return;
       }catch(err){
-        console.debug("Lector nativo no disponible, uso ZXing como respaldo:", err);
+        console.debug("Lector nativo no disponible, uso zxing-wasm como respaldo:", err);
         usingNative = false;
         readerEl.innerHTML = "";
         readerEl.appendChild(video);
       }
     }
 
-    if(typeof ZXingBrowser === "undefined"){
-      try{ await loadLib("zxing"); }catch(e){}
-    }
-    if(typeof ZXingBrowser === "undefined" || !ZXingBrowser.BrowserMultiFormatReader){
-      alert("No se pudo cargar el lector de códigos. Revisá tu conexión a internet.");
-      return;
-    }
-
-    /*
-      Android sin lector nativo / navegadores viejos:
-      - Se acota a los formatos de barras que realmente usamos (más rápido
-        que dejar que ZXing pruebe todos los formatos posibles en cada frame).
-
-      iPhone/iPad:
-      - Se limita REALMENTE a EAN-13 usando possibleFormats.
-      - Esto evita que ZXing pruebe QR, Code128, Code39, etc.
-      - @zxing/browser 0.1.5 expone BarcodeFormat y BrowserMultiFormatReader.
-    */
-    zxingReader = new ZXingBrowser.BrowserMultiFormatReader();
-
-    if(ZXingBrowser.BarcodeFormat){
-      try{
-        if(isIOS()){
-          zxingReader.possibleFormats = [ ZXingBrowser.BarcodeFormat.EAN_13 ];
-        } else {
-          zxingReader.possibleFormats = [
-            ZXingBrowser.BarcodeFormat.EAN_13, ZXingBrowser.BarcodeFormat.EAN_8,
-            ZXingBrowser.BarcodeFormat.UPC_A, ZXingBrowser.BarcodeFormat.UPC_E,
-            ZXingBrowser.BarcodeFormat.CODE_128, ZXingBrowser.BarcodeFormat.CODE_39,
-            ZXingBrowser.BarcodeFormat.CODABAR, ZXingBrowser.BarcodeFormat.ITF,
-            ZXingBrowser.BarcodeFormat.QR_CODE
-          ];
-        }
-      }catch(e){
-        console.debug("No se pudo limitar los formatos de ZXing:", e);
-      }
-    }
-
-    var constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280, min: 640 },
-        height: { ideal: 720, min: 480 },
-        frameRate: { ideal: 30, max: 30 }
-      }
-    };
-
-    // En iPhone damos un poco más de prioridad a la cámara trasera.
-    if(isIOS()){
-      constraints.video.facingMode = { exact: "environment" };
-    }
-
     try{
-      var controls = await zxingReader.decodeFromConstraints(
-        constraints,
-        video,
-        function onDecode(result, error){
-          if(result){
-            handleDecodedResult(result);
-          }
-        }
-      );
-
-      zxingControls = controls;
-      scanning = true;
-
-      $("btnStartScan").style.display = "none";
-      $("btnStopScan").style.display = "block";
-
-      if(isIOS()){
-        $("cameraTools").style.display = "flex";
-      }
-
-      // Esperamos a que Safari tenga un track real antes de tocar el foco.
-      var setupCamera = async function(){
-        if(!video.srcObject) return;
-
-        cameraTrack = getCameraTrack(video);
-        await applyCameraOptimizations(video);
-
-        // Un pequeño delay ayuda a que el autofocus de iPhone tome el código.
-        setTimeout(function(){
-          refocusCamera();
-        }, 350);
-      };
-
-      if(video.readyState >= 2){
-        setupCamera();
-      }else{
-        video.addEventListener("loadedmetadata", setupCamera, {once:true});
-      }
-
+      await startWasmScan(video);
+      if($("cameraTools")){ $("cameraTools").style.display = "flex"; }
     }catch(err){
       scanning = false;
-      zxingControls = null;
+      usingWasm = false;
       cameraTrack = null;
       readerEl.innerHTML = "";
 
-      console.error("Error iniciando ZXing:", err);
+      console.error("Error iniciando zxing-wasm:", err);
 
       var message = "No se pudo acceder a la cámara.";
 
@@ -3112,7 +3449,7 @@ document.addEventListener("DOMContentLoaded", function(){
       }else if(err && (err.name === "NotFoundError" || err.name === "DevicesNotFoundError")){
         message += " No se encontró una cámara compatible.";
       }else{
-        message += " Revisá que la página esté abierta por HTTPS y que hayas dado permiso de cámara.";
+        message += " Revisá que la página esté abierta por HTTPS y que hayas dado permiso de cámara, y tu conexión a internet (la primera vez hay que bajar el lector).";
       }
 
       alert(message);
@@ -3132,9 +3469,14 @@ document.addEventListener("DOMContentLoaded", function(){
     }
     nativeDetector = null;
 
-    if(zxingControls){
-      try{ zxingControls.stop(); }catch(e){}
-      zxingControls = null;
+    usingWasm = false;
+    if(wasmRafId){
+      try{ cancelAnimationFrame(wasmRafId); }catch(e){}
+      wasmRafId = null;
+    }
+    if(wasmStream){
+      try{ wasmStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+      wasmStream = null;
     }
 
     // Detención explícita del MediaStream para que el indicador de cámara
@@ -3158,11 +3500,6 @@ document.addEventListener("DOMContentLoaded", function(){
       readerEl.innerHTML = "";
     }
 
-    if(zxingReader){
-      try{ zxingReader.reset(); }catch(e){}
-      zxingReader = null;
-    }
-
     scanning = false;
     torchOn = false;
 
@@ -3178,6 +3515,7 @@ document.addEventListener("DOMContentLoaded", function(){
 
     scanTarget = "search";
     reservaSyncScanUi();
+    preinvSyncScanUi();
   }
 
   function goHome(){
@@ -3233,7 +3571,7 @@ document.addEventListener("DOMContentLoaded", function(){
       }
       // Con la app ya lista, bajamos en segundo plano lo que se usa después.
       setTimeout(function(){
-        loadLib("zxing").catch(function(){});
+        loadLib("zxingWasm").catch(function(){});
         loadLib("jsbarcode").catch(function(){});
       }, 1200);
     });
