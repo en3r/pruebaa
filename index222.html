@@ -1,0 +1,2860 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Consulta de Precios</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.3/JsBarcode.all.min.js"></script>
+<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-check-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Proxima Nova: usa la instalada en el dispositivo o los archivos de la carpeta /fonts.
+     Si no están, cae en Montserrat (parecida) y después en la fuente del sistema. */
+  @font-face{
+    font-family:"Proxima Nova";
+    src: local("Proxima Nova Regular"), local("ProximaNova-Regular"), local("Proxima Nova"),
+         url("fonts/ProximaNova-Regular.woff2") format("woff2");
+    font-weight:400; font-style:normal; font-display:swap;
+  }
+  @font-face{
+    font-family:"Proxima Nova";
+    src: local("Proxima Nova Semibold"), local("ProximaNova-Semibold"),
+         url("fonts/ProximaNova-Semibold.woff2") format("woff2");
+    font-weight:600; font-style:normal; font-display:swap;
+  }
+  @font-face{
+    font-family:"Proxima Nova";
+    src: local("Proxima Nova Bold"), local("ProximaNova-Bold"),
+         url("fonts/ProximaNova-Bold.woff2") format("woff2");
+    font-weight:700; font-style:normal; font-display:swap;
+  }
+  @font-face{
+    font-family:"Proxima Nova";
+    src: local("Proxima Nova Extrabold"), local("ProximaNova-Extrabold"),
+         url("fonts/ProximaNova-Extrabold.woff2") format("woff2");
+    font-weight:800; font-style:normal; font-display:swap;
+  }
+  :root{
+    --bg: #0E1A13;
+    --panel: #15271C;
+    --panel-2: #1C3527;
+    --line: #2E4C39;
+    --text: #EAF3EC;
+    --muted: #8FAE9B;
+    --accent: #3E9962;
+    --accent-text: #0B1A11;
+    --bad: #D2543A;
+    --good: #6FA36A;
+    --sans: "Proxima Nova", "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: var(--sans); /* toda la tipografía es sans serif */
+  }
+  *{ box-sizing:border-box; }
+  button, input, select, textarea{ font-family:var(--sans); }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:var(--sans);
+    font-weight:600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body{
+    display:flex; flex-direction:column;
+    min-height:100dvh;
+    position:relative;
+  }
+  #bgCroco{
+    position:fixed; inset:0;
+    z-index:0;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+    pointer-events:none;
+  }
+  #bgCroco svg{
+    width:160vw; max-width:1400px;
+    opacity:0.07;
+    transform:rotate(-8deg);
+  }
+  header, main{ position:relative; z-index:1; }
+  header{ z-index:5; }
+
+  header{
+    padding:22px 18px 18px;
+    border-bottom:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center;
+    gap:2px;
+    text-align:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition:opacity .15s ease;
+  }
+  header:active{ opacity:.7; }
+  header .brand{
+    font-size:34px; font-weight:800; letter-spacing:.06em; margin:0;
+    color:var(--text);
+    text-transform:uppercase;
+  }
+  header .subbrand{
+    font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--accent);
+    margin-top:2px;
+  }
+  header .status{
+    font-family:var(--mono); font-size:11.5px; font-weight:700; color:var(--muted);
+    text-align:center; line-height:1.4;
+    margin-top:8px;
+  }
+  main{
+    flex:1; display:flex; flex-direction:column;
+    padding:18px; gap:14px;
+    max-width:560px; width:100%; margin:0 auto;
+    overflow-y:auto;
+  }
+  .screen{
+    display:none; flex-direction:column; gap:14px;
+    opacity:0; transform:translateY(12px);
+    transition:opacity .38s cubic-bezier(.22,.61,.36,1), transform .38s cubic-bezier(.22,.61,.36,1);
+  }
+  .screen.active{ display:flex; }
+  .screen.show{ opacity:1; transform:translateY(0); }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px;
+  }
+  .hint{ color:var(--muted); font-size:13.5px; font-weight:700; line-height:1.55; }
+  .hint b{ color:var(--text); font-weight:800; }
+
+  .filebox{
+    border:1.5px dashed var(--line);
+    border-radius:10px;
+    padding:28px 16px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .2s ease, transform .2s ease, background-color .2s ease;
+  }
+  .filebox:active{ border-color:var(--accent); transform:scale(.98); background:var(--panel-2); }
+  .filebox .big{ font-size:15px; font-weight:800; margin-bottom:4px; }
+  .filebox .small{ font-size:12.5px; font-weight:700; color:var(--muted); }
+  input[type=file]{ display:none; }
+
+  label.field{ display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:var(--muted); }
+  select, input[type=text], input[type=password], input[type=date]{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:8px;
+    padding:11px 12px;
+    font-size:15px;
+    font-weight:700;
+    font-family:var(--sans);
+    width:100%;
+    transition:border-color .2s ease, outline-color .2s ease;
+  }
+  select:focus, input[type=text]:focus, input[type=password]:focus, input[type=date]:focus{ outline:2px solid var(--accent); outline-offset:-1px; }
+  input[type=date]{ color-scheme:dark; -webkit-appearance:none; appearance:none; min-height:44px; text-align:left; }
+
+  .admin-locale-card{ margin-bottom:10px; padding:14px; }
+  .admin-users-row{ padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; font-weight:700; }
+  .admin-users-row:last-child{ border-bottom:none; }
+  .link-small{
+    text-align:center; font-size:11px; font-weight:700;
+    color:var(--muted); opacity:.6; padding:4px 0; cursor:pointer;
+  }
+  .link-small:active{ opacity:1; }
+
+  .btn{
+    display:flex; align-items:center; justify-content:center;
+    gap:8px;
+    border:none; border-radius:10px;
+    padding:15px 18px;
+    font-size:15.5px; font-weight:800;
+    cursor:pointer;
+    width:100%;
+    transition:transform .15s cubic-bezier(.22,.61,.36,1), filter .15s ease, background-color .2s ease, opacity .2s ease;
+  }
+  .btn-primary{ background:var(--accent); color:var(--accent-text); }
+  .btn-primary:active{ filter:brightness(.92); transform:scale(.97); }
+  .btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .btn-ghost:active{ background:var(--panel-2); transform:scale(.97); }
+  .btn-danger{ background:transparent; color:var(--bad); border:1px solid var(--line); }
+  .btn-danger:active{ transform:scale(.97); }
+  .btn:disabled{ opacity:.45; }
+
+  .row{ display:flex; gap:10px; }
+  .row > *{ flex:1; }
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  #reader, #readerReserva{
+    width:100%;
+    aspect-ratio:16/9;
+    min-height:200px;
+    border-radius:10px;
+    overflow:hidden;
+    background:#000;
+    transition:opacity .3s ease;
+  }
+  #reader video, #readerReserva video{ width:100%; height:100%; object-fit:cover; display:block; }
+  #reader canvas, #readerReserva canvas{ border-radius:10px; }
+
+  .divider{
+    display:flex; align-items:center; gap:10px;
+    color:var(--muted); font-size:12px; font-weight:700;
+  }
+  .divider::before, .divider::after{
+    content:""; flex:1; height:1px; background:var(--line);
+  }
+
+  .result-code{ font-family:var(--mono); font-size:13px; font-weight:700; color:var(--muted); }
+  .result-code-big{
+    font-family:var(--mono); font-size:17px; font-weight:800; color:var(--text);
+    margin-bottom:2px; word-break:break-all;
+  }
+  .code-color-part{ color:var(--bad); }
+  .result-name{ font-size:17px; font-weight:800; margin:4px 0 14px; color:var(--text); }
+  .result-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px; }
+  .result-box{
+    background:var(--panel-2); border:1px solid var(--line);
+    border-radius:10px; padding:14px 12px;
+    min-width:0;
+  }
+  .result-box .label{ font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .result-box .value{
+    font-family:var(--mono); font-weight:800; margin-top:5px; color:var(--text);
+    font-size:clamp(18px, 6vw, 24px);
+    white-space:nowrap; overflow-x:auto; letter-spacing:-.01em;
+  }
+  .result-date{ font-size:12px; font-weight:700; color:var(--muted); margin-top:10px; }
+
+  @media (max-width:380px){
+    .result-grid{ grid-template-columns:1fr; }
+  }
+
+  .not-found{ color:var(--bad); font-size:15px; font-weight:800; }
+
+  .result-multi-item{
+    border-top:1px solid var(--line);
+    margin-top:14px; padding-top:14px;
+  }
+
+  .alt-toggle{
+    margin-top:16px;
+    text-align:center;
+    font-size:13px; font-weight:800; color:var(--accent);
+    background:var(--panel-2); border:1px solid var(--line);
+    border-radius:8px; padding:12px;
+    cursor:pointer;
+    transition:opacity .15s ease;
+  }
+  .alt-toggle:active{ opacity:.75; }
+  .alt-toggle::after{ content:" ▾"; }
+  .alt-toggle.open::after{ content:" ▴"; }
+
+  .alt-panel{
+    margin-top:14px;
+    border-top:1px solid var(--line);
+    padding-top:14px;
+  }
+
+  #resultCard{
+    opacity:0; transform:translateY(10px);
+  }
+  #resultCard.anim{
+    animation:resultIn .4s cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  @keyframes resultIn{
+    from{ opacity:0; transform:translateY(10px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+
+  .banner{
+    font-size:12.5px; font-weight:700; color:var(--muted);
+    background:var(--panel-2); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; line-height:1.5;
+  }
+
+  table.map-table{ width:100%; border-collapse:collapse; }
+  table.map-table td{ padding:8px 0; vertical-align:middle; }
+  table.map-table td.k{ font-size:13px; font-weight:700; color:var(--muted); width:40%; padding-right:10px; }
+
+  .admin-link{
+    text-align:center; font-size:11px; font-weight:700;
+    color:var(--muted); opacity:.5;
+    padding:10px 0 2px; cursor:pointer;
+    letter-spacing:.03em;
+  }
+  .admin-link:active{ opacity:.9; }
+
+  .sync-toast{
+    position:fixed; left:16px; right:16px; bottom:16px; z-index:70;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:12px 14px;
+    font-size:13px; font-weight:700; color:var(--text);
+    display:none;
+    box-shadow:0 6px 18px rgba(0,0,0,.4);
+  }
+  .sync-toast.error{ color:var(--bad); border-color:var(--bad); }
+  .sync-toast.ok{ color:var(--good); border-color:var(--good); }
+
+  .pin-overlay{
+    position:fixed; inset:0; z-index:60;
+    background:rgba(0,0,0,.6);
+    display:none; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .pin-box{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:22px;
+    width:100%; max-width:300px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .pin-title{ font-size:14px; font-weight:800; text-align:center; color:var(--text); }
+  .pin-error{ display:none; color:var(--bad); font-size:12px; font-weight:700; text-align:center; }
+  .pin-box input{
+    text-align:center; letter-spacing:.3em; font-size:20px;
+  }
+  .pin-box .row{ margin-top:2px; }
+
+  #splash{
+    position:fixed; inset:0; z-index:50;
+    background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px;
+    transition:opacity .45s ease;
+  }
+  #splash.hide{ opacity:0; pointer-events:none; }
+  #splash .brand{
+    font-size:34px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--text);
+  }
+  #splash .subbrand{
+    font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--accent); margin-top:-8px;
+  }
+  #splash .spinner{
+    width:28px; height:28px; border-radius:50%;
+    border:3px solid var(--line);
+    border-top-color:var(--accent);
+    animation:spin .8s linear infinite;
+    margin-top:6px;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* Menú desplegable (arriba a la izquierda) */
+  .menu-wrap{ position:absolute; top:14px; left:12px; text-align:left; }
+  .menu-btn{
+    background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px;
+    width:42px; height:40px; font-size:20px; font-weight:800; line-height:1;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .menu-btn:active{ filter:brightness(.92); }
+  .menu-panel{
+    display:none;
+    position:absolute; top:calc(100% + 6px); left:0;
+    min-width:180px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; overflow:hidden;
+    box-shadow:0 6px 18px rgba(0,0,0,.4);
+  }
+  .menu-panel.open{ display:block; }
+  .menu-item{
+    display:block; width:100%;
+    background:transparent; color:var(--text);
+    border:none; border-bottom:1px solid var(--line);
+    padding:13px 14px; text-align:left;
+    font-family:var(--sans); font-size:14.5px; font-weight:800;
+    cursor:pointer;
+  }
+  .menu-item:last-child{ border-bottom:none; }
+  .menu-item:active{ background:var(--panel-2); }
+
+  .recents-title{
+    font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:14px;
+  }
+
+  /* Botón compartir junto a cada producto */
+  .item-head{ display:flex; align-items:flex-start; gap:10px; }
+  .item-head-main{ flex:1; min-width:0; }
+  .item-actions{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
+  .share-btn, .calc-btn{
+    flex:0 0 auto;
+    width:34px; height:34px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--panel-2); color:var(--accent);
+    border:1px solid var(--line); border-radius:10px;
+    cursor:pointer;
+    transition:transform .15s cubic-bezier(.22,.61,.36,1), filter .15s ease;
+  }
+  .share-btn:active, .calc-btn:active{ transform:scale(.94); filter:brightness(.92); }
+
+  .share-overlay{
+    position:fixed; inset:0; z-index:65;
+    background:rgba(0,0,0,.6);
+    display:none; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .share-box{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:22px;
+    width:100%; max-width:400px;
+    max-height:92dvh; overflow-y:auto;
+  }
+  .share-view{ display:flex; flex-direction:column; gap:12px; }
+  .share-title{ font-size:14px; font-weight:800; text-align:center; color:var(--text); }
+  .share-sub{ font-family:var(--mono); font-size:12.5px; font-weight:700; text-align:center; color:var(--muted); margin-top:-6px; word-break:break-all; }
+  #barcodeImg{ width:100%; height:auto; display:block; border-radius:8px; background:#fff; }
+  a.btn{ text-decoration:none; }
+
+
+  /* Calculadora de precio */
+  .calc-price{
+    background:var(--panel-2); border:1px solid var(--line);
+    border-radius:10px; padding:12px 14px;
+    display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+  }
+  .calc-price .label{ font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .calc-price .value{ font-weight:800; font-size:clamp(18px, 6vw, 22px); white-space:nowrap; }
+  .calc-sec{ border-top:1px solid var(--line); padding-top:10px; }
+  .calc-sec-title{ font-size:12px; font-weight:800; color:var(--accent); margin-bottom:4px; }
+  .calc-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:6px 0; }
+  .calc-row-l{ font-size:14px; font-weight:800; color:var(--text); min-width:0; }
+  .calc-row-l span{ display:block; font-size:11.5px; font-weight:700; color:var(--muted); margin-top:1px; }
+  .calc-row-v{ font-size:16px; font-weight:800; color:var(--text); white-space:nowrap; }
+  .calc-screen{
+    background:var(--bg); border:1px solid var(--line); border-radius:10px;
+    padding:8px 12px; text-align:right;
+  }
+  .calc-expr{ font-size:12px; font-weight:700; color:var(--muted); min-height:16px; white-space:nowrap; overflow:hidden; }
+  .calc-display{ font-size:28px; font-weight:800; color:var(--text); white-space:nowrap; overflow-x:auto; }
+  .calc-pad{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+  .calc-key{
+    height:46px; font-size:18px; font-weight:800;
+    background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:10px; cursor:pointer;
+    transition:transform .12s ease, filter .12s ease;
+  }
+  .calc-key:active{ transform:scale(.95); filter:brightness(.9); }
+  .calc-key.op{ color:var(--accent); }
+  .calc-key.clear{ color:var(--bad); }
+  .calc-key.eq{ background:var(--accent); color:var(--accent-text); border-color:var(--accent); grid-row:span 2; height:auto; }
+  .calc-key.zero{ grid-column:span 2; }
+
+  /* Reservas de prendas */
+  .reserva-form{ display:flex; flex-direction:column; gap:12px; }
+  .reserva-sel{
+    background:var(--panel-2); border:1px solid var(--line);
+    border-radius:10px; padding:12px 14px;
+  }
+  #reservasList{ margin-top:8px; }
+  .reserva-item{ border-top:1px solid var(--line); padding:14px 0; display:flex; flex-direction:column; gap:3px; }
+  .reserva-item:first-child{ border-top:none; }
+  .reserva-head{ display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; }
+  .reserva-name{ font-size:21px; font-weight:800; color:var(--text); word-break:break-word; }
+  .reserva-item.vencida .reserva-name{ color:var(--bad); }
+  .reserva-badge{
+    font-size:12.5px; font-weight:800; color:var(--bad);
+    border:1px solid var(--bad); border-radius:6px; padding:2px 8px; white-space:nowrap;
+  }
+  .reserva-prods{ display:flex; flex-direction:column; gap:6px; margin:4px 0 2px; }
+  .reserva-prod span{ display:block; font-size:12.5px; font-weight:700; color:var(--muted); }
+  .reserva-sel-title{ font-size:12px; font-weight:800; color:var(--accent); margin-bottom:2px; }
+  .reserva-sel-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); }
+  .reserva-sel-title + .reserva-sel-row{ border-top:none; }
+  .reserva-sel-txt{ flex:1; min-width:0; }
+  .btn.reserva-sel-x{ width:auto; flex:0 0 auto; padding:8px 12px; }
+  .reserva-prod{ font-size:14.5px; font-weight:800; color:var(--text); }
+  .reserva-meta{ font-size:12.5px; font-weight:700; color:var(--muted); }
+  .reserva-meta a{ color:var(--accent); text-decoration:none; }
+  .reserva-due{ font-size:13px; font-weight:800; color:var(--accent); margin-top:2px; }
+  .reserva-due.late{ color:var(--bad); }
+  .reserva-del{ margin-top:8px; }
+
+  ::selection{ background:var(--accent); color:var(--accent-text); }
+</style>
+</head>
+<body>
+
+<div id="syncToast" class="sync-toast"></div>
+
+<div class="pin-overlay" id="pinModal">
+  <div class="pin-box">
+    <div class="pin-title" id="pinTitle">Clave de administrador</div>
+    <input type="password" id="pinInput" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off">
+    <div class="pin-error" id="pinError">Error pa, habla con Ruggia</div>
+    <div class="row">
+      <button class="btn btn-ghost" id="pinCancel">Cancelar</button>
+      <button class="btn btn-primary" id="pinConfirm">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="share-overlay" id="shareModal">
+  <div class="share-box">
+    <div class="share-view" id="shareMenuView">
+      <div class="share-title">Compartir</div>
+      <div class="share-sub" id="shareSub"></div>
+      <button class="btn btn-primary" id="shareWhatsapp" type="button">Compartir en WhatsApp</button>
+      <button class="btn btn-ghost" id="shareBarcode" type="button">Crear código de barra</button>
+      <button class="btn btn-ghost" id="shareClose" type="button">Cancelar</button>
+    </div>
+    <div class="share-view" id="shareBarcodeView" style="display:none;">
+      <img id="barcodeImg" alt="Código de barra" style="display:none;">
+      <div class="banner" id="barcodeMsg" style="display:none; color:var(--bad);"></div>
+      <a class="btn btn-primary" id="barcodeDownload" style="display:none;">Descargar imagen</a>
+      <button class="btn btn-ghost" id="barcodeBack" type="button">Volver</button>
+    </div>
+  </div>
+</div>
+
+<div class="share-overlay" id="calcModal">
+  <div class="share-box">
+    <div class="share-view">
+      <div class="share-title">Calculadora</div>
+      <div class="share-sub" id="calcSub"></div>
+      <div id="calcInfo" class="share-view"></div>
+      <div class="calc-sec share-view">
+        <div class="calc-sec-title">Sumar precios</div>
+        <div class="calc-screen"><div class="calc-expr" id="calcExpr">&nbsp;</div><div class="calc-display" id="calcDisplay">0</div></div>
+        <div class="calc-pad" id="calcPad">
+          <button type="button" class="calc-key clear" data-k="C">C</button>
+          <button type="button" class="calc-key op" data-k="back" aria-label="Borrar">&#9003;</button>
+          <button type="button" class="calc-key op" data-k="/" aria-label="Dividir">&divide;</button>
+          <button type="button" class="calc-key op" data-k="*" aria-label="Multiplicar">&times;</button>
+          <button type="button" class="calc-key" data-k="7">7</button>
+          <button type="button" class="calc-key" data-k="8">8</button>
+          <button type="button" class="calc-key" data-k="9">9</button>
+          <button type="button" class="calc-key op" data-k="-" aria-label="Restar">&minus;</button>
+          <button type="button" class="calc-key" data-k="4">4</button>
+          <button type="button" class="calc-key" data-k="5">5</button>
+          <button type="button" class="calc-key" data-k="6">6</button>
+          <button type="button" class="calc-key op" data-k="+" aria-label="Sumar">+</button>
+          <button type="button" class="calc-key" data-k="1">1</button>
+          <button type="button" class="calc-key" data-k="2">2</button>
+          <button type="button" class="calc-key" data-k="3">3</button>
+          <button type="button" class="calc-key eq" data-k="=">=</button>
+          <button type="button" class="calc-key zero" data-k="0">0</button>
+          <button type="button" class="calc-key" data-k=".">,</button>
+        </div>
+      </div>
+      <button class="btn btn-ghost" id="calcClose" type="button">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div id="splash">
+  <div class="brand">Lacoste</div>
+  <div class="subbrand">Buscador V1 by ruggia</div>
+  <div class="spinner"></div>
+</div>
+
+<div id="bgCroco" aria-hidden="true">
+  <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+    <g fill="#3E9962">
+      <path d="M20,150 C40,90 90,60 150,58 C160,40 180,25 205,22 C202,32 200,42 202,50 C230,45 260,50 285,65 C300,55 320,50 340,52 C332,60 325,68 322,78 C345,85 365,100 378,120 C365,118 352,120 342,128 C348,138 350,150 346,162 C336,155 326,152 316,154 C312,166 304,176 292,182 C292,170 288,160 280,152 C255,168 225,175 195,172 C190,182 180,190 168,192 C170,180 172,170 178,160 C140,158 100,165 68,180 C75,168 85,158 98,150 C70,152 44,152 20,150 Z"/>
+      <circle cx="196" cy="34" r="4" fill="#0E1A13"/>
+      <path d="M150,58 L138,52 M158,56 L148,48 M166,54 L158,45" stroke="#0E1A13" stroke-width="2" fill="none"/>
+      <path d="M60,148 L50,168 M78,150 L72,172 M100,152 L98,174" stroke="#0E1A13" stroke-width="3" fill="none"/>
+    </g>
+  </svg>
+</div>
+
+<header id="appHeader" role="button" tabindex="0" aria-label="Volver al inicio">
+  <div class="menu-wrap" id="menuWrap" style="display:none;">
+    <button class="menu-btn" id="menuBtn" type="button" aria-label="Menú" aria-haspopup="true" aria-expanded="false">☰</button>
+    <div class="menu-panel" id="menuPanel">
+      <button class="menu-item" id="menuRecents" type="button">🕘 Recientes</button>
+      <button class="menu-item" id="menuReservas" type="button">📌 Reservas</button>
+    </div>
+  </div>
+  <h1 class="brand">Lacoste</h1>
+  <div class="subbrand">Buscador V1 by ruggia</div>
+  <div class="status" id="headerStatus">sin datos cargados</div>
+</header>
+
+<main>
+
+  <!-- PANTALLA 0: login -->
+  <section class="screen" id="screen-login">
+    <div class="card">
+      <div class="hint" style="margin-bottom:14px;">Ingresá con el usuario y contraseña que te dio el administrador.</div>
+      <label class="field" style="margin-bottom:12px;">Email
+        <input type="text" id="loginEmail" inputmode="email" autocomplete="username" placeholder="tu@ejemplo.com">
+      </label>
+      <label class="field">Contraseña
+        <input type="password" id="loginPass" autocomplete="current-password" placeholder="••••••••">
+      </label>
+    </div>
+    <button class="btn btn-primary" id="btnLogin">Ingresar</button>
+    <div class="banner" id="loginError" style="display:none; color:var(--bad);"></div>
+  </section>
+
+  <!-- PANTALLA ADMIN: panel de administrador -->
+  <section class="screen" id="screen-admin">
+    <div class="card">
+      <div class="hint"><b>Panel administrador</b><br>Gestioná los locales, su stock y los usuarios.</div>
+    </div>
+
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px;"><b>Locales</b></div>
+      <div id="adminLocalesList"></div>
+    </div>
+
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px;"><b>Crear usuario</b></div>
+      <label class="field" style="margin-bottom:10px;">Email
+        <input type="text" id="newUserEmail" inputmode="email" placeholder="empleado@ejemplo.com">
+      </label>
+      <label class="field" style="margin-bottom:10px;">Contraseña provisoria
+        <input type="text" id="newUserPass" placeholder="mínimo 6 caracteres">
+      </label>
+      <label class="field" style="margin-bottom:10px;">Rol
+        <select id="newUserRol">
+          <option value="local">Usuario de local</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </label>
+      <label class="field" id="newUserLocalWrap" style="margin-bottom:12px;">Local asignado
+        <select id="newUserLocal"></select>
+      </label>
+      <button class="btn btn-primary" id="btnCreateUser">Crear usuario</button>
+      <div class="banner" id="createUserMsg" style="display:none; margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px;"><b>Usuarios existentes</b></div>
+      <div id="adminUsersList"></div>
+    </div>
+
+    <button class="btn btn-ghost" id="btnLogout">Cerrar sesión</button>
+  </section>
+
+  <!-- PANTALLA 1: cargar archivo -->
+  <section class="screen" id="screen-upload">
+    <div class="banner" id="uploadTargetHint" style="display:none;"></div>
+    <div class="card">
+      <div class="filebox" id="fileBox">
+        <div class="big">Cargar archivo de productos</div>
+        <div class="small">Tocá para elegir un archivo .xlsx, .xls, .csv o .json</div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.json">
+    </div>
+    <div class="hint">
+      El archivo debe tener columnas para <b>código</b> (el dato que vas a escanear o tipear), <b>precio</b> y <b>cantidad</b>. Podés elegir también una columna de <b>código alternativo</b> si algunos productos tienen dos códigos.
+      La fecha que se muestre en cada consulta va a ser la fecha en la que cargaste este archivo.
+    </div>
+    <button class="btn btn-ghost" id="btnSampleData">Probar con datos de ejemplo</button>
+    <button class="btn btn-ghost" id="btnCancelUpload">Cancelar</button>
+  </section>
+
+  <!-- PANTALLA 2: mapear columnas -->
+  <section class="screen" id="screen-map">
+    <div class="card">
+      <div class="hint" style="margin-bottom:14px;">Encontramos estas columnas en el archivo. Indicá qué representa cada una:</div>
+      <table class="map-table">
+        <tr><td class="k">Código principal</td><td><select id="mapCodigo"></select></td></tr>
+        <tr><td class="k">Código alternativo</td><td><select id="mapAlt"></select></td></tr>
+        <tr><td class="k">Nombre / descripción</td><td><select id="mapDesc"></select></td></tr>
+        <tr><td class="k">Precio</td><td><select id="mapPrecio"></select></td></tr>
+        <tr><td class="k">Cantidad</td><td><select id="mapCantidad"></select></td></tr>
+        <tr><td class="k">Talle (opcional)</td><td><select id="mapTalle"></select></td></tr>
+        <tr><td class="k">Color (opcional)</td><td><select id="mapColor"></select></td></tr>
+      </table>
+    </div>
+    <button class="btn btn-primary" id="btnConfirmMap">Confirmar y cargar datos</button>
+    <button class="btn btn-ghost" id="btnCancelMap">Elegir otro archivo</button>
+    <div class="banner" id="mapError" style="display:none; color:var(--bad);"></div>
+  </section>
+
+  <!-- PANTALLA 3: buscar / escanear -->
+  <section class="screen" id="screen-scan">
+    <div class="banner" id="sampleBanner" style="display:none;"></div>
+    <div class="card" id="reader-card">
+      <div id="reader"></div>
+
+      <div id="cameraTools" style="display:none; gap:8px; margin-top:10px;">
+        <button class="btn btn-ghost" id="btnRefocus" type="button" style="flex:1;">🎯 Enfocar</button>
+        <button class="btn btn-ghost" id="btnTorch" type="button" style="flex:1;">💡 Luz</button>
+      </div>
+
+      <button class="btn btn-primary" id="btnStartScan" style="margin-top:14px;">Escanear código de barras</button>
+      <button class="btn btn-ghost" id="btnStopScan" style="margin-top:10px; display:none;">Detener cámara</button>
+
+      <div class="hint" id="iosHint" style="display:none; margin-top:10px;">
+        <b>iPhone · EAN-13:</b> mantené las 13 barras completas dentro de la imagen, de frente y con buena luz. El lector está configurado específicamente para EAN-13.
+      </div>
+    </div>
+
+    <div class="divider">o ingresalo manualmente</div>
+
+    <div class="card">
+      <div class="row">
+        <input type="text" id="manualCode" placeholder="Código (usá * para lo que no sepas)" inputmode="text">
+        <button class="btn btn-primary" id="btnManualSearch" style="width:auto; padding-left:22px; padding-right:22px;">Buscar</button>
+      </div>
+    </div>
+
+    <label class="field" id="sortWrap" style="display:none;">
+      Ordenar
+      <select id="sortSelect">
+        <option value="talle">Talle</option>
+        <option value="color">Color</option>
+        <option value="temporada">Temporada</option>
+        <option value="precio">Precio</option>
+      </select>
+    </label>
+
+    <div class="card" id="resultCard" style="display:none;"></div>
+
+    <div class="banner" style="text-align:center;">
+      Todos los derechos reservados. Derechos de Autor 2026 Ruggia App. Nicolás Ruggia
+    </div>
+    <div class="admin-link" id="btnReset">Actualizar catálogo</div>
+    <div class="link-small" id="btnLogoutLocal">Cerrar sesión</div>
+  </section>
+
+  <!-- PANTALLA 4: recientes -->
+  <section class="screen" id="screen-recents">
+    <div class="card" id="recentsCard"></div>
+    <button class="btn btn-ghost" id="btnRecentsBack">Volver a buscar</button>
+  </section>
+
+  <!-- PANTALLA 5: reservas -->
+  <section class="screen" id="screen-reservas">
+    <div class="card">
+      <div class="reserva-form">
+        <div class="recents-title" style="margin-bottom:2px;">Nueva reserva</div>
+
+        <div id="reservaReaderWrap" style="display:none;"><div id="readerReserva"></div></div>
+        <button class="btn btn-primary" id="reservaScanBtn" type="button">Escanear código de barras</button>
+        <button class="btn btn-ghost" id="reservaStopBtn" type="button" style="display:none;">Detener cámara</button>
+
+        <div class="divider">o ingresalo manualmente</div>
+        <div class="row">
+          <input type="text" id="reservaCode" placeholder="Código del producto" inputmode="text" autocomplete="off">
+          <button class="btn btn-primary" id="reservaAddBtn" type="button" style="width:auto; padding-left:22px; padding-right:22px;">Agregar</button>
+        </div>
+
+        <div class="reserva-sel" id="reservaSel" style="display:none;"></div>
+
+        <label class="field">Nombre del cliente
+          <input type="text" id="reservaCliente" autocomplete="off">
+        </label>
+        <label class="field">Hasta qué fecha?
+          <input type="date" id="reservaFecha">
+        </label>
+        <label class="field">Número del cliente
+          <input type="text" id="reservaTel" inputmode="tel" placeholder="opcional" autocomplete="off">
+        </label>
+        <label class="field">Reservado por:
+          <input type="text" id="reservaPor" placeholder="opcional" autocomplete="off">
+        </label>
+        <button class="btn btn-primary" id="reservaGuardar" type="button">Reservar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="alt-toggle" id="reservasToggle" style="margin-top:0;">Reservas</div>
+      <div id="reservasList" style="display:none;"></div>
+    </div>
+
+    <button class="btn btn-ghost" id="btnReservasBack">Volver a buscar</button>
+  </section>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  var state = {
+    items: [],
+    byCode: new Map(),
+    byAlt: new Map(),
+    loadDateISO: null,
+    loadDateLabel: null,
+    mapping: null,
+    rawParsed: null,
+    columns: []
+  };
+
+  // Lector de códigos: nativo del sistema cuando está disponible (rápido, Android/Chrome)
+  // y ZXing como respaldo (siempre en iPhone/Safari, y en navegadores sin lector nativo).
+  var zxingReader = null;
+  var zxingControls = null;
+  var scanning = false;
+  var scanTarget = "search"; // "search" (buscador) o "reserva" (pantalla de reservas)
+
+  // Estado del lector nativo (BarcodeDetector).
+  var nativeDetector = null;
+  var nativeStream = null;
+  var nativeRafId = null;
+  var usingNative = false;
+
+  // Formatos de barras que nos interesan (se usan para acotar la búsqueda y que sea más rápido).
+  var COMMON_BARCODE_FORMATS = ["ean_13","ean_8","upc_a","upc_e","code_128","code_39","codabar","itf","qr_code"];
+
+  // Estado adicional de cámara.
+  var cameraTrack = null;
+  var torchOn = false;
+  var lastDecodedText = "";
+  var lastDecodedAt = 0;
+
+  function $(id){ return document.getElementById(id); }
+
+  // ---------- Firebase: pegá acá los datos de TU proyecto ----------
+  // Los sacás de la consola de Firebase: ícono de engranaje > Configuración del
+  // proyecto > "Tus apps" > app Web > "Configuración del SDK".
+  // databaseURL ya viene con el que usaba la app (Realtime Database).
+  var firebaseConfig = {
+    apiKey: "AIzaSyB3FByOERjtQHJBNOvkHGss4ZALbFdK-s8",
+    authDomain: "busquedaruggia.firebaseapp.com",
+    databaseURL: "https://busquedaruggia-default-rtdb.firebaseio.com",
+    projectId: "busquedaruggia",
+    storageBucket: "Pbusquedaruggia.firebasestorage.app",
+    messagingSenderId: "796730764242",
+    appId: "1:796730764242:web:a49f20453c161343c1760b",
+    measurementId: "G-Y2XZLPDLZ1"
+  };
+  firebase.initializeApp(firebaseConfig);
+
+  // App Check: bloquea accesos que no vengan de esta misma página (bots, scripts, etc.)
+  // Site key de reCAPTCHA v3 generada en https://www.google.com/recaptcha/admin
+  var appCheck = firebase.appCheck();
+  appCheck.activate("6LeiMcotAAAAAOU7WFmSuCIgBWEOVVlddPJMDyZD", true);
+
+  var auth = firebase.auth();
+  var db = firebase.database();
+  auth.languageCode = "es";
+
+  // Los 5 locales fijos. El "id" es el que se usa como clave en la base de datos.
+  var LOCALES = [
+    { id:"distrito-arcos", nombre:"Distrito Arcos" },
+    { id:"soleil",         nombre:"Soleil" },
+    { id:"terrazas",       nombre:"Terrazas" },
+    { id:"barracas",       nombre:"Barracas" },
+    { id:"aguirre",        nombre:"Aguirre" }
+  ];
+  function localNombre(id){
+    var l = LOCALES.filter(function(x){ return x.id === id; })[0];
+    return l ? l.nombre : id;
+  }
+
+  var currentUserProfile = null; // {uid, email, rol, local}
+  var uploadTargetLocal = null;
+  var uploadReturnScreen = "screen-scan";
+
+  function showUploadTargetLabel(){
+    var el = $("uploadTargetHint");
+    if(!el) return;
+    if(uploadTargetLocal){
+      el.style.display = "block";
+      el.innerHTML = "Vas a cargar el stock de <b>" + escapeHtml(localNombre(uploadTargetLocal)) + "</b>.";
+    } else {
+      el.style.display = "none";
+    }
+  }
+
+  // PIN propio de cada local, para que un usuario de local confirme antes
+  // de reemplazar su stock (además de ya estar logueado con su usuario).
+  function checkLocalPin(localId){
+    return db.ref("locales/" + localId + "/pin").once("value").then(function(snap){
+      var pinReal = snap.val() || "";
+      return new Promise(function(resolve){
+        if(!pinReal){
+          // El administrador todavía no configuró un PIN para este local: se deja pasar.
+          resolve(true);
+          return;
+        }
+        var modal = $("pinModal"), input = $("pinInput"), err = $("pinError");
+        $("pinTitle").textContent = "PIN de " + localNombre(localId);
+        input.value = "";
+        err.style.display = "none";
+        modal.style.display = "flex";
+        setTimeout(function(){ input.focus(); }, 50);
+
+        function close(result){
+          modal.style.display = "none";
+          $("pinConfirm").removeEventListener("click", onConfirm);
+          $("pinCancel").removeEventListener("click", onCancel);
+          input.removeEventListener("keydown", onKey);
+          resolve(result);
+        }
+        function onConfirm(){
+          if(input.value === pinReal){ close(true); }
+          else{ err.style.display = "block"; input.value = ""; input.focus(); }
+        }
+        function onCancel(){ close(false); }
+        function onKey(e){ if(e.key === "Enter") onConfirm(); }
+
+        $("pinConfirm").addEventListener("click", onConfirm);
+        $("pinCancel").addEventListener("click", onCancel);
+        input.addEventListener("keydown", onKey);
+      });
+    }).catch(function(){ return false; });
+  }
+
+  function showScreen(id){
+    document.querySelectorAll(".screen").forEach(function(s){ s.classList.remove("active","show"); });
+    var el = $(id);
+    el.classList.add("active");
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ el.classList.add("show"); });
+    });
+  }
+
+  function updateHeaderStatus(){
+    if(currentUserProfile && currentUserProfile.rol === "admin"){
+      $("headerStatus").textContent = "Panel administrador";
+      return;
+    }
+    var prefix = currentUserProfile ? localNombre(currentUserProfile.local) + " · " : "";
+    if(state.items.length){
+      $("headerStatus").textContent = prefix + state.items.length.toLocaleString("es-AR") + " productos · " + state.loadDateLabel;
+    } else {
+      $("headerStatus").textContent = prefix + "sin datos cargados";
+    }
+  }
+
+  function formatMoney(n){
+    if(n === null || n === undefined || isNaN(n)) return "—";
+    return "$ " + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+  function formatQty(n){
+    if(n === null || n === undefined || isNaN(n)) return "—";
+    return n.toLocaleString("es-AR");
+  }
+  function toNumber(v){
+    if(typeof v === "number") return v;
+    if(v === null || v === undefined) return NaN;
+    var s = String(v).trim().replace(/[^\d.,-]/g,"");
+    if(s.indexOf(",") > -1 && s.indexOf(".") > -1){
+      s = s.replace(/\./g,"").replace(",",".");
+    } else if(s.indexOf(",") > -1){
+      s = s.replace(",",".");
+    }
+    return parseFloat(s);
+  }
+  function normCode(v){
+    return String(v === null || v === undefined ? "" : v).trim();
+  }
+
+  // ---------- Carga de archivo ----------
+
+  $("fileBox").addEventListener("click", function(){ $("fileInput").click(); });
+
+  $("fileInput").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    $("sampleBanner").style.display = "none";
+    var name = file.name.toLowerCase();
+    var reader = new FileReader();
+
+    if(name.endsWith(".json")){
+      reader.onload = function(ev){
+        try{
+          var data = JSON.parse(ev.target.result);
+          if(!Array.isArray(data)){
+            var arr = null;
+            for(var k in data){ if(Array.isArray(data[k])){ arr = data[k]; break; } }
+            data = arr || [];
+          }
+          onParsed(data);
+        }catch(err){
+          alert("No se pudo leer el archivo JSON. Verificá que sea una lista de productos válida.");
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      reader.onload = function(ev){
+        try{
+          var wb = XLSX.read(ev.target.result, {type:"binary"});
+          var sheet = wb.Sheets[wb.SheetNames[0]];
+          var data = XLSX.utils.sheet_to_json(sheet, {defval:""});
+          onParsed(data);
+        }catch(err){
+          alert("No se pudo leer el archivo. Verificá que sea un Excel o CSV válido.");
+        }
+      };
+      reader.readAsBinaryString(file);
+    }
+  });
+
+  function onParsed(data){
+    if(!data || !data.length){
+      alert("El archivo no tiene filas de datos.");
+      return;
+    }
+    state.rawParsed = data;
+    state.columns = Object.keys(data[0]);
+    buildMappingScreen();
+    showScreen("screen-map");
+  }
+
+  // ---------- Datos de ejemplo (demo) ----------
+
+  var SAMPLE_ROWS = [
+    {Codigo:"7791234567890", CodigoAlt:"LAC-001-M-AZ", Nombre:"Chomba Lacoste Classic Fit", Precio:45000, Cantidad:12, Talle:"M",  Color:"Azul"},
+    {Codigo:"7791234567891", CodigoAlt:"LAC-001-L-AZ", Nombre:"Chomba Lacoste Classic Fit", Precio:45000, Cantidad:8,  Talle:"L",  Color:"Azul"},
+    {Codigo:"7791234567892", CodigoAlt:"LAC-001-M-BL", Nombre:"Chomba Lacoste Classic Fit", Precio:45000, Cantidad:5,  Talle:"M",  Color:"Blanco"},
+    {Codigo:"7791234567893", CodigoAlt:"LAC-002-S-NG", Nombre:"Remera Lacoste Sport",       Precio:32000, Cantidad:20, Talle:"S",  Color:"Negro"},
+    {Codigo:"7791234567894", CodigoAlt:"LAC-002-M-NG", Nombre:"Remera Lacoste Sport",       Precio:32000, Cantidad:15, Talle:"M",  Color:"Negro"},
+    {Codigo:"7791234567895", CodigoAlt:"LAC-003-40-BE", Nombre:"Pantalón Lacoste Chino",    Precio:58000, Cantidad:7,  Talle:"40", Color:"Beige"},
+    {Codigo:"7791234567896", CodigoAlt:"LAC-003-42-BE", Nombre:"Pantalón Lacoste Chino",    Precio:58000, Cantidad:4,  Talle:"42", Color:"Beige"},
+    {Codigo:"7791234567897", CodigoAlt:"LAC-004-L-VE",  Nombre:"Campera Lacoste Softshell", Precio:89000, Cantidad:3,  Talle:"L",  Color:"Verde"},
+    {Codigo:"7791234567898", CodigoAlt:"LAC-005-U-BL",  Nombre:"Gorra Lacoste Logo",        Precio:21000, Cantidad:25, Talle:"Único", Color:"Blanco"},
+    {Codigo:"7791234567899", CodigoAlt:"LAC-006-42-BL", Nombre:"Zapatillas Lacoste Court",  Precio:76000, Cantidad:6,  Talle:"42", Color:"Blanco"}
+  ];
+
+  $("btnSampleData").addEventListener("click", function(){
+    var mapping = {codigo:"Codigo", alt:"CodigoAlt", desc:"Nombre", precio:"Precio", cantidad:"Cantidad", talle:"Talle", color:"Color"};
+    applyMapping(mapping, SAMPLE_ROWS, new Date(), true);
+    var lines = SAMPLE_ROWS.map(function(r){
+      return "· " + r.Codigo + " — " + r.Nombre + " (" + r.Talle + (r.Color ? ", "+r.Color : "") + ")";
+    }).join("<br>");
+    var banner = $("sampleBanner");
+    banner.style.display = "block";
+    banner.innerHTML = "<b>Datos de ejemplo cargados (solo en este dispositivo, no se comparten).</b> Escribí manualmente alguno de estos códigos para probar (o el código alternativo, ej. LAC-001-M-AZ):<br><br>" + lines;
+  });
+
+  function guessColumn(cols, preferExact, patterns){
+    var lower = cols.map(function(c){ return c.toLowerCase(); });
+    if(preferExact){
+      for(var p=0;p<preferExact.length;p++){
+        var idx = lower.indexOf(preferExact[p]);
+        if(idx > -1) return cols[idx];
+      }
+    }
+    for(var i=0;i<lower.length;i++){
+      for(var j=0;j<patterns.length;j++){
+        if(lower[i].indexOf(patterns[j]) > -1) return cols[i];
+      }
+    }
+    return "";
+  }
+
+  function buildMappingScreen(){
+    var cols = state.columns;
+    var optionsHtml = '<option value="">— ninguna —</option>' + cols.map(function(c){
+      return '<option value="'+escapeHtml(c)+'">'+escapeHtml(c)+'</option>';
+    }).join("");
+
+    $("mapCodigo").innerHTML = optionsHtml;
+    $("mapAlt").innerHTML = optionsHtml;
+    $("mapDesc").innerHTML = optionsHtml;
+    $("mapPrecio").innerHTML = optionsHtml;
+    $("mapCantidad").innerHTML = optionsHtml;
+    $("mapTalle").innerHTML = optionsHtml;
+    $("mapColor").innerHTML = optionsHtml;
+
+    setSelectValue("mapCodigo", guessColumn(cols, ["nombre","codigo","código"], ["codig","cod"]) || cols[0]);
+    setSelectValue("mapAlt", guessColumn(cols, [], ["alt","secundario","alternativ"]));
+    setSelectValue("mapDesc", guessColumn(cols, ["descripcion","descripción","detalle"], ["descrip","detalle","nombre"]));
+    setSelectValue("mapPrecio", guessColumn(cols, [], ["preci"]));
+    setSelectValue("mapCantidad", guessColumn(cols, [], ["cantid","stock","existenc"]));
+    setSelectValue("mapTalle", guessColumn(cols, [], ["talle","talla","size"]));
+    setSelectValue("mapColor", guessColumn(cols, [], ["color"]));
+
+    $("mapError").style.display = "none";
+  }
+
+  function setSelectValue(id, value){
+    var el = $(id);
+    if(value){ el.value = value; }
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  $("btnCancelMap").addEventListener("click", function(){
+    $("fileInput").value = "";
+    showScreen("screen-upload");
+  });
+
+  $("btnCancelUpload").addEventListener("click", function(){
+    $("fileInput").value = "";
+    var target = uploadReturnScreen || "screen-scan";
+    showScreen(target);
+    if(target === "screen-admin") renderAdminPanel();
+  });
+
+  $("btnConfirmMap").addEventListener("click", function(){
+    var mapping = {
+      codigo: $("mapCodigo").value,
+      alt: $("mapAlt").value,
+      desc: $("mapDesc").value,
+      precio: $("mapPrecio").value,
+      cantidad: $("mapCantidad").value,
+      talle: $("mapTalle").value,
+      color: $("mapColor").value
+    };
+    if(!mapping.codigo || !mapping.precio || !mapping.cantidad){
+      $("mapError").style.display = "block";
+      $("mapError").textContent = "Elegí al menos columna de código, precio y cantidad.";
+      return;
+    }
+    applyMapping(mapping, state.rawParsed, new Date());
+  });
+
+  function applyMapping(mapping, rows, loadDate, skipPersist){
+    var byCode = new Map();
+    var byAlt = new Map();
+    var items = [];
+
+    rows.forEach(function(row){
+      var item = {
+        codigo: normCode(row[mapping.codigo]),
+        alt: mapping.alt ? normCode(row[mapping.alt]) : "",
+        desc: mapping.desc ? String(row[mapping.desc] || "") : "",
+        precio: toNumber(row[mapping.precio]),
+        cantidad: toNumber(row[mapping.cantidad]),
+        talle: mapping.talle ? String(row[mapping.talle] || "") : "",
+        color: mapping.color ? String(row[mapping.color] || "") : ""
+      };
+      if(!item.codigo) return;
+      items.push(item);
+      byCode.set(item.codigo, item);
+      byCode.set(item.codigo.toLowerCase(), item);
+      if(item.alt){
+        byAlt.set(item.alt, item);
+        byAlt.set(item.alt.toLowerCase(), item);
+      }
+    });
+
+    state.items = items;
+    state.byCode = byCode;
+    state.byAlt = byAlt;
+    state.mapping = mapping;
+    state.loadDateISO = loadDate.toISOString();
+    state.loadDateLabel = loadDate.toLocaleString("es-AR", {
+      day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit"
+    });
+
+    if(!skipPersist){
+      var payload = {
+        items: items,
+        loadDateISO: state.loadDateISO,
+        loadDateLabel: state.loadDateLabel,
+        mapping: mapping
+      };
+      persistLocal(uploadTargetLocal, payload);
+      updateHeaderStatus();
+      if(uploadReturnScreen === "screen-admin"){
+        showScreen("screen-admin");
+        renderAdminPanel();
+      } else {
+        showScreen("screen-scan");
+      }
+    } else {
+      updateHeaderStatus();
+      showScreen("screen-scan");
+    }
+  }
+
+  function showToast(msg, kind){
+    var el = $("syncToast");
+    if(!el) return;
+    el.textContent = msg;
+    el.className = "sync-toast" + (kind ? " " + kind : "");
+    el.style.display = "block";
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(function(){ el.style.display = "none"; }, 5000);
+  }
+
+  // ---------- Guardado / lectura del stock por local (Firebase Auth + Realtime Database) ----------
+
+
+  // La seguridad ahora la dan las reglas de Firebase (cada usuario solo puede
+  // leer/escribir el local que tiene asignado; el admin puede todo). Por eso
+  // ya no hace falta cifrar el contenido a mano como antes.
+
+  function persistLocal(localId, payload){
+    if(!localId) return Promise.resolve();
+    showToast("Guardando stock de " + localNombre(localId) + "...");
+    return db.ref("locales/" + localId + "/stock").set(payload).then(function(){
+      showToast("Stock de " + localNombre(localId) + " guardado ✓", "ok");
+    }).catch(function(err){
+      console.error("Error guardando stock:", err);
+      showToast("No se pudo guardar: " + err.message, "error");
+    });
+  }
+
+  function loadLocalStock(localId){
+    return db.ref("locales/" + localId + "/stock").once("value").then(function(snap){
+      var data = snap.val();
+      if(!data || !data.items){
+        state.items = []; state.byCode = new Map(); state.byAlt = new Map();
+        state.loadDateISO = null; state.loadDateLabel = null; state.mapping = null;
+        return;
+      }
+      var byCode = new Map(), byAlt = new Map();
+      data.items.forEach(function(item){
+        byCode.set(item.codigo, item);
+        byCode.set(item.codigo.toLowerCase(), item);
+        if(item.alt){ byAlt.set(item.alt, item); byAlt.set(item.alt.toLowerCase(), item); }
+      });
+      state.items = data.items;
+      state.byCode = byCode;
+      state.byAlt = byAlt;
+      state.mapping = data.mapping;
+      state.loadDateISO = data.loadDateISO;
+      state.loadDateLabel = data.loadDateLabel;
+    }).catch(function(e){
+      console.error("Error cargando el stock del local:", e);
+      showToast("No se pudo leer el stock de este local.", "error");
+    });
+  }
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  // ---------- Login / sesión ----------
+
+  function doLogin(){
+    var email = $("loginEmail").value.trim();
+    var pass = $("loginPass").value;
+    var errEl = $("loginError");
+    errEl.style.display = "none";
+    if(!email || !pass) return;
+    auth.signInWithEmailAndPassword(email, pass).catch(function(err){
+      errEl.style.display = "block";
+      errEl.textContent = "No se pudo ingresar. Revisá el email y la contraseña.";
+      console.error("Error de login:", err);
+    });
+  }
+  $("btnLogin").addEventListener("click", doLogin);
+  $("loginPass").addEventListener("keydown", function(e){ if(e.key === "Enter") doLogin(); });
+
+  function doLogout(){
+    if(scanning) stopScanning();
+    stopReservasListener();
+    auth.signOut();
+  }
+  $("btnLogout").addEventListener("click", doLogout);
+  $("btnLogoutLocal").addEventListener("click", doLogout);
+
+  $("btnReset").addEventListener("click", function(){
+    if(!currentUserProfile || !currentUserProfile.local) return;
+    checkLocalPin(currentUserProfile.local).then(function(ok){
+      if(!ok) return;
+      if(scanning) stopScanning();
+      $("fileInput").value = "";
+      $("resultCard").style.display = "none";
+      $("sampleBanner").style.display = "none";
+      if($("sortWrap")) $("sortWrap").style.display = "none";
+      lastSearchItems = [];
+      uploadTargetLocal = currentUserProfile.local;
+      uploadReturnScreen = "screen-scan";
+      showUploadTargetLabel();
+      showScreen("screen-upload");
+    });
+  });
+
+  // ---------- Panel administrador ----------
+
+  function populateNewUserLocalSelect(){
+    var sel = $("newUserLocal");
+    sel.innerHTML = LOCALES.map(function(l){
+      return '<option value="' + l.id + '">' + escapeHtml(l.nombre) + '</option>';
+    }).join("");
+  }
+
+  $("newUserRol").addEventListener("change", function(){
+    $("newUserLocalWrap").style.display = (this.value === "admin") ? "none" : "flex";
+  });
+
+  function renderAdminLocales(){
+    var listEl = $("adminLocalesList");
+    listEl.innerHTML = "Cargando…";
+    db.ref("locales").once("value").then(function(snap){
+      var data = snap.val() || {};
+      var html = "";
+      LOCALES.forEach(function(loc){
+        var entry = data[loc.id] || {};
+        var stockInfo = entry.stock;
+        var count = (stockInfo && stockInfo.items) ? stockInfo.items.length : 0;
+        var fecha = (stockInfo && stockInfo.loadDateLabel) ? stockInfo.loadDateLabel : "sin datos";
+        var pin = entry.pin || "";
+        html += '<div class="card admin-locale-card">' +
+          '<div class="result-name" style="margin:0 0 6px;">' + escapeHtml(loc.nombre) + '</div>' +
+          '<div class="hint" style="margin-bottom:12px;">' + count + ' productos · ' + escapeHtml(fecha) + '</div>' +
+          '<button class="btn btn-primary" data-upload="' + loc.id + '" style="margin-bottom:12px;">Cargar / actualizar stock</button>' +
+          '<label class="field">PIN de este local' +
+            '<div class="row">' +
+              '<input type="text" inputmode="numeric" data-pin-input="' + loc.id + '" placeholder="ej. 1234" value="' + escapeHtml(pin) + '">' +
+              '<button class="btn btn-ghost" data-pin-save="' + loc.id + '" style="width:auto; flex:0 0 auto; padding-left:16px; padding-right:16px;">Guardar</button>' +
+            '</div>' +
+          '</label>' +
+        '</div>';
+      });
+      listEl.innerHTML = html;
+
+      Array.prototype.forEach.call(listEl.querySelectorAll("[data-upload]"), function(btn){
+        btn.addEventListener("click", function(){
+          uploadTargetLocal = btn.getAttribute("data-upload");
+          uploadReturnScreen = "screen-admin";
+          $("fileInput").value = "";
+          showUploadTargetLabel();
+          showScreen("screen-upload");
+        });
+      });
+      Array.prototype.forEach.call(listEl.querySelectorAll("[data-pin-save]"), function(btn){
+        btn.addEventListener("click", function(){
+          var id = btn.getAttribute("data-pin-save");
+          var input = listEl.querySelector('[data-pin-input="' + id + '"]');
+          var val = input.value.trim();
+          db.ref("locales/" + id + "/pin").set(val).then(function(){
+            showToast("PIN de " + localNombre(id) + " actualizado ✓", "ok");
+          }).catch(function(err){
+            showToast("No se pudo guardar el PIN: " + err.message, "error");
+          });
+        });
+      });
+    }).catch(function(err){
+      console.error("Error leyendo locales:", err);
+      listEl.innerHTML = '<div class="hint" style="color:var(--bad);">No se pudieron cargar los locales.</div>';
+    });
+  }
+
+  function renderAdminUsers(){
+    var el = $("adminUsersList");
+    el.innerHTML = "Cargando…";
+    db.ref("usuarios").once("value").then(function(snap){
+      var data = snap.val() || {};
+      var uids = Object.keys(data);
+      if(!uids.length){
+        el.innerHTML = '<div class="hint">Todavía no hay usuarios creados.</div>';
+        return;
+      }
+      el.innerHTML = uids.map(function(uid){
+        var u = data[uid];
+        var detalle = (u.rol === "admin") ? "Administrador" : localNombre(u.local);
+        return '<div class="admin-users-row">' + escapeHtml(u.email || "") + ' — ' + escapeHtml(detalle) + '</div>';
+      }).join("");
+    }).catch(function(err){
+      console.error("Error leyendo usuarios:", err);
+      el.innerHTML = '<div class="hint" style="color:var(--bad);">No se pudieron cargar los usuarios.</div>';
+    });
+  }
+
+  function renderAdminPanel(){
+    renderAdminLocales();
+    renderAdminUsers();
+    populateNewUserLocalSelect();
+  }
+
+  $("btnCreateUser").addEventListener("click", function(){
+    var email = $("newUserEmail").value.trim();
+    var pass = $("newUserPass").value;
+    var rol = $("newUserRol").value;
+    var local = $("newUserLocal").value;
+    var msg = $("createUserMsg");
+
+    msg.style.display = "block";
+    msg.style.color = "var(--muted)";
+
+    if(!email || !pass || pass.length < 6){
+      msg.style.color = "var(--bad)";
+      msg.textContent = "Completá un email y una contraseña de al menos 6 caracteres.";
+      return;
+    }
+    msg.textContent = "Creando usuario…";
+
+    // Se crea con una instancia secundaria de Firebase para no cerrar tu propia
+    // sesión de administrador (crear un usuario con el SDK normal te loguearía
+    // automáticamente como ese usuario nuevo).
+    var secondaryApp = firebase.initializeApp(firebaseConfig, "Secondary_" + Date.now());
+    secondaryApp.auth().createUserWithEmailAndPassword(email, pass).then(function(cred){
+      var uid = cred.user.uid;
+      var perfil = (rol === "admin")
+        ? { email: email, rol: "admin" }
+        : { email: email, rol: "local", local: local };
+      return db.ref("usuarios/" + uid).set(perfil).then(function(){
+        return secondaryApp.auth().signOut();
+      });
+    }).then(function(){
+      return secondaryApp.delete();
+    }).then(function(){
+      msg.style.color = "var(--good)";
+      msg.textContent = "Usuario creado ✓";
+      $("newUserEmail").value = "";
+      $("newUserPass").value = "";
+      renderAdminUsers();
+    }).catch(function(err){
+      console.error("Error creando usuario:", err);
+      msg.style.color = "var(--bad)";
+      msg.textContent = "No se pudo crear: " + err.message;
+      try{ secondaryApp.delete(); }catch(e){}
+    });
+  });
+
+  // ---------- Sesión: qué pantalla mostrar según quién está logueado ----------
+
+  function handleAuthChange(user){
+    if(!user){
+      stopReservasListener();
+      currentUserProfile = null;
+      updateMenuVisibility();
+      showScreen("screen-login");
+      return Promise.resolve();
+    }
+    return db.ref("usuarios/" + user.uid).once("value").then(function(snap){
+      var perfil = snap.val();
+      if(!perfil){
+        showToast("Tu usuario no tiene un perfil asignado. Hablá con el administrador.", "error");
+        return auth.signOut();
+      }
+      currentUserProfile = { uid: user.uid, email: user.email, rol: perfil.rol, local: perfil.local || null };
+      updateMenuVisibility();
+      if(perfil.rol === "admin"){
+        updateHeaderStatus();
+        showScreen("screen-admin");
+        renderAdminPanel();
+      } else {
+        return loadLocalStock(perfil.local).then(function(){
+          updateHeaderStatus();
+          showScreen("screen-scan");
+        });
+      }
+    }).catch(function(err){
+      console.error("Error cargando el perfil del usuario:", err);
+      showToast("No se pudo cargar tu perfil.", "error");
+    });
+  }
+
+  // ---------- Búsqueda ----------
+
+  function lookup(codeRaw){
+    var code = normCode(codeRaw);
+    if(!code) return null;
+    return state.byCode.get(code) || state.byCode.get(code.toLowerCase())
+        || state.byAlt.get(code) || state.byAlt.get(code.toLowerCase())
+        || null;
+  }
+
+  function escapeRegex(s){
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function wildcardToRegex(pattern){
+    var parts = pattern.split("*").map(escapeRegex);
+    var full = parts.join(".*");
+    // Si al final del código real no hay nada (falta ese dato, ej. el talle),
+    // también se considera coincidencia: se acepta con o sin lo que sigue al último *.
+    var withoutLastPart = parts.slice(0, -1).join(".*");
+    return new RegExp("^(?:" + full + "|" + withoutLastPart + ")$", "i");
+  }
+
+  function searchByWildcard(pattern){
+    var regex = wildcardToRegex(pattern);
+    var matches = [];
+    state.items.forEach(function(item){
+      if(regex.test(item.codigo) || (item.alt && regex.test(item.alt))){
+        matches.push(item);
+      }
+    });
+    return matches;
+  }
+
+  function performSearch(codeRaw){
+    var code = normCode(codeRaw);
+    if(!code) return;
+    var ts = Date.now();
+    addRecent(code, ts);
+    if(code.indexOf("*") > -1){
+      renderResults(code, searchByWildcard(code), ts);
+    } else {
+      var item = lookup(code);
+      renderResults(code, item ? [item] : [], ts);
+    }
+  }
+
+  // ---------- Recientes (últimos 10 códigos consultados hoy, por usuario) ----------
+  // Se guardan en este dispositivo, separados por usuario (uid), así que no
+  // hace falta tocar las reglas de Firebase.
+
+  var RECENTS_MAX = 10;
+
+  function pad2(n){ return (n < 10 ? "0" : "") + n; }
+
+  function formatDateTime(ts){
+    var d = new Date(ts);
+    return pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1) + "/" + d.getFullYear() +
+      " · " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
+  function dayKey(ts){
+    var d = new Date(ts);
+    return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  }
+
+  function recentsKey(){
+    return currentUserProfile ? "lacoste_recientes_" + currentUserProfile.uid : null;
+  }
+
+  function loadRecents(){
+    var key = recentsKey();
+    if(!key) return [];
+    try{
+      var raw = localStorage.getItem(key);
+      var list = raw ? JSON.parse(raw) : [];
+      if(!Array.isArray(list)) return [];
+      var today = dayKey(Date.now());
+      return list.filter(function(e){
+        return e && e.code && e.ts && dayKey(e.ts) === today;
+      });
+    }catch(err){
+      return [];
+    }
+  }
+
+  function addRecent(code, ts){
+    var key = recentsKey();
+    if(!key) return;
+    var norm = code.toLowerCase();
+    // Solo hoy, sin repetir el mismo código (queda el más reciente arriba).
+    var list = loadRecents().filter(function(e){
+      return String(e.code).toLowerCase() !== norm;
+    });
+    list.unshift({ code: code, ts: ts });
+    list = list.slice(0, RECENTS_MAX);
+    try{ localStorage.setItem(key, JSON.stringify(list)); }catch(err){}
+  }
+
+  function consultedLine(ts, marginTop){
+    return '<div class="result-date" style="margin-top:' + marginTop + 'px;">Consultado el ' + escapeHtml(formatDateTime(ts)) + '</div>';
+  }
+
+  function renderRecents(){
+    var card = $("recentsCard");
+    var list = loadRecents();
+    var html = '<div class="recents-title">Recientes</div>';
+
+    if(!list.length){
+      html += '<div class="hint">Todavía no consultaste ningún código hoy.</div>';
+      card.innerHTML = html;
+      return;
+    }
+
+    list.forEach(function(entry, idx){
+      var block;
+      if(entry.code.indexOf("*") > -1){
+        var n = searchByWildcard(entry.code).length;
+        block = '<div class="result-code-big">Búsqueda: ' + escapeHtml(entry.code) + '</div>' +
+          '<div class="result-code">' + n + (n === 1 ? ' coincidencia' : ' coincidencias') + '</div>' +
+          '<button class="btn btn-ghost" type="button" data-recent-code="' + escapeHtml(entry.code) + '" style="margin-top:12px;">Ver coincidencias</button>';
+      } else {
+        var item = lookup(entry.code);
+        block = item
+          ? itemBlock(item)
+          : '<div class="result-code">Código: ' + escapeHtml(entry.code) + '</div>' +
+            '<div class="not-found">No se encontró ningún producto con ese código.</div>';
+      }
+      html += '<div' + (idx > 0 ? ' class="result-multi-item"' : '') + '>' +
+        block + consultedLine(entry.ts, 10) + '</div>';
+    });
+
+    card.innerHTML = html;
+
+    Array.prototype.forEach.call(card.querySelectorAll("[data-recent-code]"), function(btn){
+      btn.addEventListener("click", function(){
+        var code = btn.getAttribute("data-recent-code");
+        showScreen("screen-scan");
+        performSearch(code);
+      });
+    });
+  }
+
+  function openRecents(){
+    closeMenu();
+    if(scanning) stopScanning();
+    renderRecents();
+    showScreen("screen-recents");
+  }
+
+  // ---------- Menú desplegable ----------
+
+  function closeMenu(){
+    var panel = $("menuPanel");
+    if(panel) panel.classList.remove("open");
+    var btn = $("menuBtn");
+    if(btn) btn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleMenu(){
+    var panel = $("menuPanel");
+    var open = !panel.classList.contains("open");
+    panel.classList.toggle("open", open);
+    $("menuBtn").setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function updateMenuVisibility(){
+    var show = !!(currentUserProfile && currentUserProfile.rol !== "admin");
+    $("menuWrap").style.display = show ? "block" : "none";
+    if(!show) closeMenu();
+  }
+
+  $("menuBtn").addEventListener("click", function(e){ e.stopPropagation(); toggleMenu(); });
+  $("menuPanel").addEventListener("click", function(e){ e.stopPropagation(); });
+  $("menuRecents").addEventListener("click", function(e){ e.stopPropagation(); openRecents(); });
+  document.addEventListener("click", closeMenu);
+  $("btnRecentsBack").addEventListener("click", function(){ showScreen("screen-scan"); });
+
+  // ---------- Estructura del código (familia + prenda + temporada + color + talle) ----------
+  // 13 o 14 caracteres: 2 familia, 4 prenda, 2 temporada, 3 color, 2 o 3 talle.
+  function parseCodeStructure(codigo){
+    var raw = String(codigo || "").trim();
+    if(raw.length !== 13 && raw.length !== 14) return null;
+    return {
+      familia: raw.slice(0, 2),
+      prenda: raw.slice(2, 6),
+      temporada: raw.slice(6, 8),
+      color: raw.slice(8, 11),
+      talle: raw.slice(11)
+    };
+  }
+
+  var TALLE_RANK = { "TS":1, "S":1, "TM":2, "M":2, "TL":3, "L":3, "XL":4, "XXL":5, "2XL":5, "XXXL":6, "3XL":6 };
+
+  function talleSortValue(talle){
+    if(!talle) return 999;
+    var t = String(talle).toUpperCase();
+    if(TALLE_RANK.hasOwnProperty(t)) return TALLE_RANK[t];
+    var num = parseFloat(t);
+    if(!isNaN(num)) return num;
+    return 999;
+  }
+
+  function itemSortFields(item){
+    var parsed = parseCodeStructure(item.codigo) || {};
+    return {
+      talle: parsed.talle || item.talle || "",
+      color: parsed.color || item.color || "",
+      temporada: parsed.temporada || ""
+    };
+  }
+
+  function sortItems(items, criterion){
+    var arr = items.slice();
+    arr.sort(function(a, b){
+      if(criterion === "precio"){
+        return (a.precio || 0) - (b.precio || 0);
+      }
+      var fa = itemSortFields(a), fb = itemSortFields(b);
+      if(criterion === "talle"){
+        return talleSortValue(fa.talle) - talleSortValue(fb.talle);
+      }
+      if(criterion === "color"){
+        return String(fa.color).localeCompare(String(fb.color));
+      }
+      if(criterion === "temporada"){
+        return String(fa.temporada).localeCompare(String(fb.temporada));
+      }
+      return 0;
+    });
+    return arr;
+  }
+
+  function codeWithColorHighlight(codigo){
+    var raw = String(codigo || "");
+    if(raw.length <= 2) return escapeHtml(raw);
+    return escapeHtml(raw.slice(0, -2)) + '<span class="code-color-part">' + escapeHtml(raw.slice(-2)) + '</span>';
+  }
+
+  var CALC_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="16" y1="10" x2="16.01" y2="10"/><line x1="12" y1="10" x2="12.01" y2="10"/><line x1="8" y1="10" x2="8.01" y2="10"/><line x1="12" y1="14" x2="12.01" y2="14"/><line x1="8" y1="14" x2="8.01" y2="14"/><line x1="12" y1="18" x2="12.01" y2="18"/><line x1="8" y1="18" x2="8.01" y2="18"/></svg>';
+
+  var SHARE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>';
+
+  function itemBlock(item){
+    return '<div class="item-head"><div class="item-head-main">' +
+      '<div class="result-code-big">Código: ' + codeWithColorHighlight(item.codigo) + '</div>' +
+      (item.alt ? '<div class="result-code">Alt: '+escapeHtml(item.alt)+'</div>' : '') +
+      '<div class="result-name">'+escapeHtml(item.desc || item.codigo)+
+        (item.talle ? ' · Talle '+escapeHtml(item.talle) : '') +
+        (item.color ? ' · '+escapeHtml(item.color) : '') +
+      '</div></div>' +
+      '<div class="item-actions">' +
+        '<button class="share-btn" type="button" data-share-code="'+escapeHtml(item.codigo)+'" aria-label="Compartir">'+SHARE_ICON+'</button>' +
+        '<button class="calc-btn" type="button" data-calc-code="'+escapeHtml(item.codigo)+'" aria-label="Calculadora">'+CALC_ICON+'</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="result-grid">' +
+        '<div class="result-box"><div class="label">Precio</div><div class="value">'+formatMoney(item.precio)+'</div></div>' +
+        '<div class="result-box"><div class="label">Cantidad</div><div class="value">'+formatQty(item.cantidad)+'</div></div>' +
+      '</div>';
+  }
+
+  var lastSearchCode = "";
+  var lastSearchItems = [];
+  var lastSearchTs = null;
+
+  function buildAlternatesSection(item){
+    if(!item.codigo || item.codigo.length < 6) return "";
+    return '<div class="alt-toggle" id="altToggle">Otros colores y talles</div>' +
+      '<div class="alt-panel" id="altPanel" style="display:none;">' +
+        '<label class="field" style="margin-bottom:12px;">Ordenar' +
+          '<select id="altSortSelect">' +
+            '<option value="talle">Talle</option>' +
+            '<option value="color">Color</option>' +
+            '<option value="temporada">Temporada</option>' +
+            '<option value="precio">Precio</option>' +
+          '</select>' +
+        '</label>' +
+        '<div id="altResults"></div>' +
+      '</div>';
+  }
+
+  function wireAlternatesUI(card, item){
+    var toggle = card.querySelector("#altToggle");
+    if(!toggle) return;
+    var panel = card.querySelector("#altPanel");
+    var altResultsEl = card.querySelector("#altResults");
+    var altSortEl = card.querySelector("#altSortSelect");
+    var prefix = item.codigo.slice(0, 6);
+
+    var altItems = state.items.filter(function(it){
+      return it.codigo && it.codigo.slice(0, 6) === prefix && it.codigo !== item.codigo;
+    });
+
+    function renderAlt(){
+      if(!altItems.length){
+        altResultsEl.innerHTML = '<div class="not-found">No hay otras variantes cargadas de este producto.</div>';
+        return;
+      }
+      var sortedAlt = sortItems(altItems, altSortEl.value);
+      var html = "";
+      sortedAlt.forEach(function(it, idx){
+        html += '<div'+(idx > 0 ? ' class="result-multi-item"' : '')+'>' + itemBlock(it) + '</div>';
+      });
+      altResultsEl.innerHTML = html;
+    }
+
+    toggle.addEventListener("click", function(){
+      var isOpen = panel.style.display !== "none";
+      if(isOpen){
+        panel.style.display = "none";
+        toggle.classList.remove("open");
+      } else {
+        panel.style.display = "block";
+        toggle.classList.add("open");
+        renderAlt();
+      }
+    });
+
+    altSortEl.addEventListener("change", renderAlt);
+  }
+
+  function renderResults(code, items, ts){
+    lastSearchCode = code;
+    lastSearchItems = items || [];
+    if(ts) lastSearchTs = ts;
+    var consultedTs = lastSearchTs || Date.now();
+
+    var sortWrap = $("sortWrap");
+    if(sortWrap) sortWrap.style.display = (lastSearchItems.length > 1) ? "flex" : "none";
+
+    var sorted = lastSearchItems.length > 1
+      ? sortItems(lastSearchItems, $("sortSelect") ? $("sortSelect").value : "talle")
+      : lastSearchItems;
+
+    var card = $("resultCard");
+    card.style.display = "block";
+    card.classList.remove("anim");
+    void card.offsetWidth;
+    card.classList.add("anim");
+
+    if(!sorted || !sorted.length){
+      card.innerHTML =
+        '<div class="result-code">Código: '+escapeHtml(code)+'</div>' +
+        '<div class="not-found">No se encontró ningún producto con ese código.</div>' +
+        consultedLine(consultedTs, 10);
+      return;
+    }
+
+    if(sorted.length === 1){
+      var item = sorted[0];
+      card.innerHTML = itemBlock(item) +
+        '<div class="result-date">Datos actualizados al '+escapeHtml(state.loadDateLabel)+'</div>' +
+        consultedLine(consultedTs, 4) +
+        buildAlternatesSection(item);
+      wireAlternatesUI(card, item);
+      return;
+    }
+
+    var html = '<div class="result-code" style="margin-bottom:10px;">Búsqueda "'+escapeHtml(code)+'" · '+sorted.length+' coincidencias</div>';
+    sorted.forEach(function(item, idx){
+      html += '<div'+(idx > 0 ? ' class="result-multi-item"' : '')+'>' + itemBlock(item) + '</div>';
+    });
+    html += '<div class="result-date">Datos actualizados al '+escapeHtml(state.loadDateLabel)+'</div>';
+    html += consultedLine(consultedTs, 4);
+    card.innerHTML = html;
+  }
+
+  $("btnManualSearch").addEventListener("click", doManualSearch);
+
+  var sortSelectEl = $("sortSelect");
+  if(sortSelectEl){
+    sortSelectEl.addEventListener("change", function(){
+      if(lastSearchItems.length > 1){
+        renderResults(lastSearchCode, lastSearchItems);
+      }
+    });
+  }
+  $("manualCode").addEventListener("keydown", function(e){
+    if(e.key === "Enter") doManualSearch();
+  });
+  function doManualSearch(){
+    var code = $("manualCode").value;
+    if(!code.trim()) return;
+    performSearch(code);
+  }
+
+  // ---------- Compartir (WhatsApp / código de barra) ----------
+
+  var shareItem = null;
+
+  // Texto que se manda por WhatsApp: "Código; Talle; Precio"
+  function shareText(item){
+    var parsed = parseCodeStructure(item.codigo) || {};
+    var talle = item.talle || parsed.talle || "-";
+    return item.codigo + "; " + talle + "; " + formatMoney(item.precio);
+  }
+
+  function showShareMenu(){
+    $("shareBarcodeView").style.display = "none";
+    $("shareMenuView").style.display = "flex";
+  }
+
+  function openShare(item){
+    shareItem = item;
+    $("shareSub").textContent = item.codigo;
+    showShareMenu();
+    $("shareModal").style.display = "flex";
+  }
+
+  function closeShare(){
+    $("shareModal").style.display = "none";
+    shareItem = null;
+  }
+
+  // Dibuja las barras del valor indicado. Si son 13 dígitos válidos usa EAN-13,
+  // en cualquier otro caso usa Code 128 (acepta letras, números y guiones).
+  function drawBarcodeCanvas(value){
+    var bc = document.createElement("canvas");
+    var opts = { displayValue:false, margin:0, width:3, height:120, background:"#ffffff", lineColor:"#000000" };
+    if(/^\d{13}$/.test(value)){
+      try{
+        opts.format = "EAN13";
+        JsBarcode(bc, value, opts);
+        return bc;
+      }catch(err){ /* dígito verificador inválido: seguimos con Code 128 */ }
+    }
+    opts.format = "CODE128";
+    JsBarcode(bc, value, opts);
+    return bc;
+  }
+
+  // Imagen final: código arriba (centrado), barras (leen el alternativo) y alternativo abajo.
+  function buildBarcodeImage(item){
+    var bc = drawBarcodeCanvas(item.alt);
+    var pad = 40, gap = 22, topH = 34, botH = 30;
+    var fontFamily = '"Proxima Nova", "Montserrat", Helvetica, Arial, sans-serif';
+    var topFont = "bold 34px " + fontFamily;
+    var botFont = "bold 30px " + fontFamily;
+
+    var m = document.createElement("canvas").getContext("2d");
+    m.font = topFont; var w1 = m.measureText(item.codigo).width;
+    m.font = botFont; var w2 = m.measureText(item.alt).width;
+
+    var W = Math.max(460, Math.ceil(Math.max(bc.width, w1, w2)) + pad * 2);
+    var H = pad + topH + gap + bc.height + gap + botH + pad;
+
+    var c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+
+    ctx.font = topFont;
+    ctx.fillText(item.codigo, W / 2, pad);
+    ctx.drawImage(bc, Math.round((W - bc.width) / 2), pad + topH + gap);
+    ctx.font = botFont;
+    ctx.fillText(item.alt, W / 2, pad + topH + gap + bc.height + gap);
+
+    return c.toDataURL("image/png");
+  }
+
+  function showBarcodeView(item){
+    var img = $("barcodeImg"), msg = $("barcodeMsg"), dl = $("barcodeDownload");
+    $("shareMenuView").style.display = "none";
+    $("shareBarcodeView").style.display = "flex";
+    img.style.display = "none";
+    dl.style.display = "none";
+    msg.style.display = "none";
+
+    function fail(text){
+      msg.textContent = text;
+      msg.style.display = "block";
+    }
+
+    if(!item.alt){
+      fail("Este producto no tiene código alternativo, así que no se puede crear el código de barra.");
+      return;
+    }
+    if(typeof JsBarcode === "undefined"){
+      fail("No se pudo cargar el generador de códigos de barra. Revisá tu conexión a internet.");
+      return;
+    }
+    try{
+      var url = buildBarcodeImage(item);
+      img.src = url;
+      img.style.display = "block";
+      dl.href = url;
+      dl.download = "barcode-" + item.alt.replace(/[^A-Za-z0-9_-]/g, "_") + ".png";
+      dl.style.display = "flex";
+    }catch(err){
+      console.error("Error generando el código de barra:", err);
+      fail("No se pudo crear el código de barra con este código alternativo.");
+    }
+  }
+
+  document.addEventListener("click", function(e){
+    var btn = e.target.closest ? e.target.closest("[data-share-code]") : null;
+    if(!btn) return;
+    var item = lookup(btn.getAttribute("data-share-code"));
+    if(item) openShare(item);
+  });
+
+  $("shareWhatsapp").addEventListener("click", function(){
+    if(!shareItem) return;
+    var url = "https://wa.me/?text=" + encodeURIComponent(shareText(shareItem));
+    window.open(url, "_blank");
+    closeShare();
+  });
+  $("shareBarcode").addEventListener("click", function(){
+    if(shareItem) showBarcodeView(shareItem);
+  });
+  $("barcodeBack").addEventListener("click", showShareMenu);
+  $("shareClose").addEventListener("click", closeShare);
+  $("shareModal").addEventListener("click", function(e){
+    if(e.target === $("shareModal")) closeShare();
+  });
+
+  // ---------- Calculadora de precio ----------
+
+  // Configuración: acá se agregan o cambian las opciones.
+  var CALC_DESCUENTOS = [10, 15, 20];            // % de descuento. Ej: [10, 15, 20, 25]
+  var CALC_CUOTAS = [ {cuotas:3, recargo:0} ];   // recargo en %. Ej: agregar {cuotas:6, recargo:10}
+  var CALC_IVA = 21;                             // % de IVA
+
+  var CALC_OPS = {"+":"+", "-":"\u2212", "*":"\u00d7", "/":"\u00f7"};
+  var calcPrice = NaN;
+  var calcState = {cur:"0", prev:null, op:null, fresh:true, err:false};
+
+  function round2(n){ return Math.round(n * 100) / 100; }
+
+  function calcNumToStr(n){
+    var t = n.toFixed(8).replace(/\.?0+$/, "");
+    return (t === "-0" || t === "") ? "0" : t;
+  }
+
+  function calcFormatEntry(str){
+    var neg = str.charAt(0) === "-";
+    if(neg) str = str.slice(1);
+    var parts = str.split(".");
+    var whole = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return (neg ? "-" : "") + whole + (parts.length > 1 ? "," + parts[1] : "");
+  }
+
+  function calcCompute(a, op, b){
+    if(op === "+") return a + b;
+    if(op === "-") return a - b;
+    if(op === "*") return a * b;
+    if(op === "/") return b === 0 ? NaN : a / b;
+    return b;
+  }
+
+  function calcReset(){
+    calcState = {cur:"0", prev:null, op:null, fresh:true, err:false};
+  }
+
+  function calcResolve(){
+    var st = calcState;
+    var r = calcCompute(st.prev, st.op, parseFloat(st.cur));
+    if(!isFinite(r) || Math.abs(r) >= 1e15){
+      st.err = true; st.cur = "0"; st.prev = null; st.op = null; st.fresh = true;
+      return;
+    }
+    st.cur = calcNumToStr(r);
+  }
+
+  function calcPress(k){
+    var st = calcState;
+    if(st.err){ calcReset(); st = calcState; }
+    if(k.length === 1 && k >= "0" && k <= "9"){
+      if(st.fresh){ st.cur = k; st.fresh = false; }
+      else if(st.cur.replace(/[-.]/g, "").length < 12){ st.cur = (st.cur === "0") ? k : st.cur + k; }
+    } else if(k === "."){
+      if(st.fresh){ st.cur = "0."; st.fresh = false; }
+      else if(st.cur.indexOf(".") < 0){ st.cur += "."; }
+    } else if(k === "C"){
+      calcReset();
+    } else if(k === "back"){
+      if(!st.fresh){ st.cur = st.cur.length > 1 ? st.cur.slice(0, -1) : "0"; }
+    } else if(k === "="){
+      if(st.op){ calcResolve(); st.op = null; st.prev = null; st.fresh = true; }
+    } else {
+      if(st.op && !st.fresh){ calcResolve(); }
+      if(!st.err){ st.prev = parseFloat(st.cur); st.op = k; st.fresh = true; }
+    }
+    calcRender();
+  }
+
+  function calcRender(){
+    var st = calcState;
+    $("calcDisplay").textContent = st.err ? "Error" : calcFormatEntry(st.cur);
+    $("calcExpr").textContent = (st.op && st.prev !== null)
+      ? calcFormatEntry(calcNumToStr(st.prev)) + " " + CALC_OPS[st.op]
+      : "\u00a0";
+  }
+
+  function calcRow(label, sub, value){
+    return '<div class="calc-row"><div class="calc-row-l">' + label +
+      (sub ? '<span>' + sub + '</span>' : '') + '</div>' +
+      '<div class="calc-row-v">' + value + '</div></div>';
+  }
+
+  function calcInfoHtml(p){
+    var ok = isFinite(p);
+    var h = '<div class="calc-price"><div class="label">Precio</div><div class="value">' + formatMoney(ok ? p : NaN) + '</div></div>';
+
+    h += '<div class="calc-sec"><div class="calc-sec-title">Cuotas</div>';
+    CALC_CUOTAS.forEach(function(c){
+      var total = ok ? p * (1 + c.recargo / 100) : NaN;
+      h += calcRow(c.cuotas + ' cuotas de',
+        (ok ? 'Total ' + formatMoney(round2(total)) + ' · ' : '') + (c.recargo ? c.recargo + '% de recargo' : 'sin interés'),
+        formatMoney(ok ? round2(total / c.cuotas) : NaN));
+    });
+    h += '</div>';
+
+    h += '<div class="calc-sec"><div class="calc-sec-title">Descuento</div>';
+    CALC_DESCUENTOS.forEach(function(d){
+      var fin = ok ? p * (1 - d / 100) : NaN;
+      h += calcRow(d + '% de descuento',
+        ok ? 'Ahorrás ' + formatMoney(round2(p - fin)) : '',
+        formatMoney(ok ? round2(fin) : NaN));
+    });
+    h += '</div>';
+
+    var neto = ok ? p / (1 + CALC_IVA / 100) : NaN;
+    h += '<div class="calc-sec"><div class="calc-sec-title">Sin IVA</div>' +
+      calcRow('Precio neto', ok ? 'IVA (' + CALC_IVA + '%) ' + formatMoney(round2(p - neto)) : '', formatMoney(ok ? round2(neto) : NaN)) +
+      '</div>';
+    return h;
+  }
+
+  function openCalc(item){
+    calcPrice = (item.precio === null || item.precio === undefined) ? NaN : Number(item.precio);
+    $("calcSub").textContent = item.codigo;
+    $("calcInfo").innerHTML = calcInfoHtml(calcPrice);
+    calcReset();
+    if(isFinite(calcPrice)){ calcState.cur = calcNumToStr(round2(calcPrice)); }
+    calcRender();
+    $("calcModal").style.display = "flex";
+  }
+
+  function closeCalc(){
+    $("calcModal").style.display = "none";
+  }
+
+  document.addEventListener("click", function(e){
+    var btn = e.target.closest ? e.target.closest("[data-calc-code]") : null;
+    if(!btn) return;
+    var item = lookup(btn.getAttribute("data-calc-code"));
+    if(item) openCalc(item);
+  });
+  $("calcPad").addEventListener("click", function(e){
+    var key = e.target.closest ? e.target.closest("[data-k]") : null;
+    if(key) calcPress(key.getAttribute("data-k"));
+  });
+  $("calcClose").addEventListener("click", closeCalc);
+  $("calcModal").addEventListener("click", function(e){
+    if(e.target === $("calcModal")) closeCalc();
+  });
+
+  // ---------- Reservas de prendas (por local, compartidas entre celulares) ----------
+  // Se guardan en Firebase en locales/<local>/reservas, así las ven todos los
+  // celulares de ese local y se actualizan en vivo.
+
+  var reservaItems = [];           // productos elegidos para la reserva actual
+  var reservasRef = null;
+  var reservasListenerLocal = null;
+  var reservasData = {};
+
+  function reservasPath(){
+    return (currentUserProfile && currentUserProfile.local)
+      ? "locales/" + currentUserProfile.local + "/reservas" : null;
+  }
+
+  function startReservasListener(){
+    var path = reservasPath();
+    if(!path) return;
+    if(reservasRef && reservasListenerLocal === currentUserProfile.local) return;
+    stopReservasListener();
+    reservasListenerLocal = currentUserProfile.local;
+    reservasRef = db.ref(path);
+    reservasRef.on("value", function(snap){
+      reservasData = snap.val() || {};
+      renderReservasList();
+    }, function(err){
+      console.error("Error leyendo reservas:", err);
+      showToast("No se pudieron leer las reservas: " + err.message, "error");
+    });
+  }
+
+  function stopReservasListener(){
+    if(reservasRef){ try{ reservasRef.off(); }catch(e){} }
+    reservasRef = null;
+    reservasListenerLocal = null;
+    reservasData = {};
+  }
+
+  function todayISO(){
+    var d = new Date();
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function formatISODate(iso){
+    var p = String(iso || "").split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : String(iso || "");
+  }
+
+  function reservaProductLine(r){
+    var parsed = parseCodeStructure(r.codigo) || {};
+    var talle = r.talle || parsed.talle || "";
+    return (r.desc || r.codigo) + (talle ? " · Talle " + talle : "") + (r.color ? " · " + r.color : "");
+  }
+
+  // Las reservas viejas guardaban un solo producto; las nuevas guardan una lista.
+  function reservaProductos(r){
+    if(Array.isArray(r.productos)) return r.productos;
+    if(r.productos && typeof r.productos === "object"){
+      return Object.keys(r.productos).map(function(k){ return r.productos[k]; });
+    }
+    return r.codigo ? [{ codigo:r.codigo, desc:r.desc, talle:r.talle, color:r.color }] : [];
+  }
+
+  function renderReservasList(){
+    var toggle = $("reservasToggle"), box = $("reservasList");
+    if(!toggle || !box) return;
+    var list = Object.keys(reservasData).map(function(id){
+      var r = reservasData[id] || {};
+      r.id = id;
+      return r;
+    });
+    list.sort(function(a, b){
+      if((a.hasta || "") !== (b.hasta || "")) return (a.hasta || "") < (b.hasta || "") ? -1 : 1;
+      return (a.creadaTs || 0) - (b.creadaTs || 0);
+    });
+    toggle.textContent = list.length ? "Reservas (" + list.length + ")" : "Reservas";
+
+    if(!list.length){
+      box.innerHTML = '<div class="hint">Todavía no hay reservas en este local.</div>';
+      return;
+    }
+    var today = todayISO();
+    box.innerHTML = list.map(function(r){
+      var vencida = !!(r.hasta && r.hasta < today);
+      var due;
+      if(vencida){
+        due = '<div class="reserva-due late">Venció el ' + escapeHtml(formatISODate(r.hasta)) + '</div>';
+      } else if(r.hasta === today){
+        due = '<div class="reserva-due">Vence hoy</div>';
+      } else {
+        due = '<div class="reserva-due">Hasta el ' + escapeHtml(formatISODate(r.hasta)) + '</div>';
+      }
+      var prods = reservaProductos(r).map(function(pr){
+        return '<div class="reserva-prod">' + escapeHtml(reservaProductLine(pr)) +
+          '<span>Código: ' + escapeHtml(pr.codigo || "") + '</span></div>';
+      }).join("");
+      var tel = String(r.telefono || "").trim();
+      return '<div class="reserva-item' + (vencida ? ' vencida' : '') + '">' +
+        '<div class="reserva-head"><div class="reserva-name">' + escapeHtml(r.cliente || "Sin nombre") + '</div>' +
+          (vencida ? '<span class="reserva-badge">Reserva vencida</span>' : '') + '</div>' +
+        '<div class="reserva-prods">' + prods + '</div>' +
+        due +
+        (tel ? '<div class="reserva-meta">Tel: <a href="tel:' + escapeHtml(tel.replace(/[^\d+]/g, "")) + '">' + escapeHtml(tel) + '</a></div>' : '') +
+        (r.por ? '<div class="reserva-meta">Reservado por ' + escapeHtml(r.por) + '</div>' : '') +
+        '<button class="btn btn-danger reserva-del" type="button" data-reserva-del="' + escapeHtml(r.id) + '">Eliminar reserva</button>' +
+      '</div>';
+    }).join("");
+  }
+
+  function renderReservaSel(){
+    var el = $("reservaSel");
+    if(!reservaItems.length){ el.style.display = "none"; el.innerHTML = ""; return; }
+    el.style.display = "block";
+    el.innerHTML = '<div class="reserva-sel-title">Productos a reservar (' + reservaItems.length + ')</div>' +
+      reservaItems.map(function(it, i){
+        return '<div class="reserva-sel-row"><div class="reserva-sel-txt">' +
+          '<div class="reserva-prod">' + escapeHtml(reservaProductLine(it)) +
+          '<span>Código: ' + escapeHtml(it.codigo) + '</span></div></div>' +
+          '<button class="btn btn-ghost reserva-sel-x" type="button" data-reserva-quitar="' + i + '">Quitar</button></div>';
+      }).join("");
+  }
+
+  function reservaLookup(codeRaw){
+    var code = normCode(codeRaw);
+    if(!code) return;
+    if(code.indexOf("*") > -1){
+      showToast("Para reservar, ingresá el código completo (sin *).", "error");
+      return;
+    }
+    var item = lookup(code);
+    if(!item){
+      showToast("No encontré el código " + code + " en el catálogo de este local.", "error");
+      return;
+    }
+    var repetido = reservaItems.some(function(x){ return x.codigo === item.codigo; });
+    if(repetido){
+      showToast("Ese producto ya está en la lista.", "error");
+      return;
+    }
+    reservaItems.push(item);
+    $("reservaCode").value = "";
+    renderReservaSel();
+  }
+
+  function reservaSyncScanUi(){
+    var on = scanning && scanTarget === "reserva";
+    $("reservaReaderWrap").style.display = on ? "block" : "none";
+    $("reservaScanBtn").style.display = on ? "none" : "block";
+    $("reservaStopBtn").style.display = on ? "block" : "none";
+  }
+
+  function guardarReserva(){
+    var path = reservasPath();
+    if(!path){ showToast("Tu usuario no tiene un local asignado.", "error"); return; }
+    var cliente = $("reservaCliente").value.trim();
+    var fecha = $("reservaFecha").value;
+    if(!reservaItems.length){ showToast("Primero agregá al menos un producto a reservar.", "error"); return; }
+    if(!cliente){ showToast("Escribí el nombre del cliente.", "error"); return; }
+    if(!fecha){ showToast("Elegí hasta qué fecha se reserva.", "error"); return; }
+    if(fecha < todayISO()){ showToast("La fecha no puede ser anterior a hoy.", "error"); return; }
+
+    var productos = reservaItems.map(function(it){
+      var parsed = parseCodeStructure(it.codigo) || {};
+      return {
+        codigo: it.codigo,
+        desc: it.desc || "",
+        talle: it.talle || parsed.talle || "",
+        color: it.color || ""
+      };
+    });
+    var data = {
+      productos: productos,
+      cliente: cliente,
+      hasta: fecha,
+      telefono: $("reservaTel").value.trim(),
+      por: $("reservaPor").value.trim(),
+      creadaTs: Date.now(),
+      creadaPor: currentUserProfile.email || ""
+    };
+    $("reservaGuardar").disabled = true;
+    db.ref(path).push(data).then(function(){
+      showToast("Reserva guardada ✓", "ok");
+      reservaItems = [];
+      renderReservaSel();
+      $("reservaCliente").value = "";
+      $("reservaFecha").value = "";
+      $("reservaTel").value = "";
+      $("reservaPor").value = "";
+      $("reservasList").style.display = "block";
+      $("reservasToggle").classList.add("open");
+    }).catch(function(err){
+      console.error("Error guardando la reserva:", err);
+      showToast("No se pudo guardar la reserva: " + err.message, "error");
+    }).then(function(){
+      $("reservaGuardar").disabled = false;
+    });
+  }
+
+  function openReservas(){
+    closeMenu();
+    if(scanning) stopScanning();
+    startReservasListener();
+    renderReservasList();
+    $("reservaFecha").min = todayISO();
+    showScreen("screen-reservas");
+  }
+
+  $("menuReservas").addEventListener("click", function(e){ e.stopPropagation(); openReservas(); });
+  $("btnReservasBack").addEventListener("click", function(){
+    if(scanning) stopScanning();
+    showScreen("screen-scan");
+  });
+  $("reservaScanBtn").addEventListener("click", function(){
+    if(scanning) stopScanning();
+    scanTarget = "reserva";
+    $("reservaReaderWrap").style.display = "block";
+    startScanning().then(function(){
+      if(!scanning) scanTarget = "search";
+      reservaSyncScanUi();
+    });
+  });
+  $("reservaStopBtn").addEventListener("click", function(){ stopScanning(); });
+  $("reservaAddBtn").addEventListener("click", function(){ reservaLookup($("reservaCode").value); });
+  $("reservaCode").addEventListener("keydown", function(e){
+    if(e.key === "Enter") reservaLookup($("reservaCode").value);
+  });
+  $("reservaGuardar").addEventListener("click", guardarReserva);
+  $("reservaSel").addEventListener("click", function(e){
+    var btn = e.target.closest ? e.target.closest("[data-reserva-quitar]") : null;
+    if(!btn) return;
+    reservaItems.splice(parseInt(btn.getAttribute("data-reserva-quitar"), 10), 1);
+    renderReservaSel();
+  });
+  $("reservasToggle").addEventListener("click", function(){
+    var open = $("reservasList").style.display === "none";
+    $("reservasList").style.display = open ? "block" : "none";
+    $("reservasToggle").classList.toggle("open", open);
+  });
+  $("reservasList").addEventListener("click", function(e){
+    var btn = e.target.closest ? e.target.closest("[data-reserva-del]") : null;
+    if(!btn) return;
+    var id = btn.getAttribute("data-reserva-del");
+    var r = reservasData[id] || {};
+    if(!confirm("¿Eliminar la reserva de " + (r.cliente || "este cliente") + "?")) return;
+    var path = reservasPath();
+    if(!path) return;
+    db.ref(path + "/" + id).remove().catch(function(err){
+      console.error("Error eliminando la reserva:", err);
+      showToast("No se pudo eliminar: " + err.message, "error");
+    });
+  });
+
+  // ---------- Escaneo de cámara ----------
+
+  $("btnStartScan").addEventListener("click", startScanning);
+  $("btnStopScan").addEventListener("click", stopScanning);
+  $("btnRefocus").addEventListener("click", refocusCamera);
+  $("btnTorch").addEventListener("click", toggleTorch);
+
+  function isIOS(){
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  function supportsNativeDetector(){
+    // El detector nativo (rápido, con aceleración por hardware) no existe en iOS/Safari,
+    // así que ahí siempre usamos ZXing con la restricción a EAN-13 que ya tenían resuelta.
+    return !isIOS() && ("BarcodeDetector" in window);
+  }
+
+  function handleNativeResult(barcode){
+    var decodedText = String(barcode.rawValue || "").replace(/\s/g,"");
+    if(!decodedText) return;
+
+    var now = Date.now();
+    if(decodedText === lastDecodedText && (now - lastDecodedAt) < 1200) return;
+    lastDecodedText = decodedText;
+    lastDecodedAt = now;
+
+    if(navigator.vibrate){
+      try{ navigator.vibrate(70); }catch(e){}
+    }
+
+    afterScan(decodedText);
+  }
+
+  async function startNativeScan(video){
+    var formats = COMMON_BARCODE_FORMATS;
+    try{
+      var supported = await BarcodeDetector.getSupportedFormats();
+      formats = formats.filter(function(f){ return supported.indexOf(f) > -1; });
+    }catch(e){ /* si falla, seguimos con la lista completa */ }
+
+    nativeDetector = new BarcodeDetector({ formats: formats });
+
+    var constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 }
+      }
+    };
+
+    nativeStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = nativeStream;
+    await video.play().catch(function(){});
+
+    cameraTrack = getCameraTrack(video);
+    await applyCameraOptimizations(video);
+
+    usingNative = true;
+    scanning = true;
+    $("btnStartScan").style.display = "none";
+    $("btnStopScan").style.display = "block";
+
+    var busy = false;
+    function loop(){
+      if(!scanning || !usingNative) return;
+      if(!busy && video.readyState >= 2){
+        busy = true;
+        nativeDetector.detect(video).then(function(barcodes){
+          busy = false;
+          if(barcodes && barcodes.length){
+            handleNativeResult(barcodes[0]);
+          }
+        }).catch(function(){ busy = false; });
+      }
+      nativeRafId = requestAnimationFrame(loop);
+    }
+    nativeRafId = requestAnimationFrame(loop);
+  }
+
+  function getCameraTrack(video){
+    try{
+      var stream = video && video.srcObject;
+      if(!stream || !stream.getVideoTracks) return null;
+      var tracks = stream.getVideoTracks();
+      return tracks && tracks.length ? tracks[0] : null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  async function applyCameraOptimizations(video){
+    cameraTrack = getCameraTrack(video);
+    if(!cameraTrack || !cameraTrack.getCapabilities) return;
+
+    var capabilities = cameraTrack.getCapabilities();
+    var advanced = {};
+
+    // Safari/iPhone no siempre expone estas capacidades.
+    // Solo pedimos las que realmente informa el dispositivo.
+    if(capabilities.focusMode && capabilities.focusMode.indexOf("continuous") !== -1){
+      advanced.focusMode = "continuous";
+    }
+    if(capabilities.exposureMode && capabilities.exposureMode.indexOf("continuous") !== -1){
+      advanced.exposureMode = "continuous";
+    }
+    if(capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.indexOf("continuous") !== -1){
+      advanced.whiteBalanceMode = "continuous";
+    }
+
+    if(Object.keys(advanced).length){
+      try{
+        await cameraTrack.applyConstraints({advanced:[advanced]});
+      }catch(e){
+        console.debug("Optimización de cámara no disponible:", e);
+      }
+    }
+
+    // La linterna solo aparece si el dispositivo realmente la expone.
+    if($("btnTorch")){
+      $("btnTorch").style.display = capabilities.torch ? "block" : "none";
+    }
+  }
+
+  function getReaderEl(){
+    return scanTarget === "reserva" ? $("readerReserva") : $("reader");
+  }
+
+  // Qué hacer con un código leído por la cámara, según desde dónde se abrió.
+  function afterScan(text){
+    if(scanTarget === "reserva"){
+      stopScanning();
+      reservaLookup(text);
+    } else {
+      performSearch(text);
+      stopScanning();
+    }
+  }
+
+  async function refocusCamera(){
+    if(!cameraTrack) return;
+
+    try{
+      var capabilities = cameraTrack.getCapabilities ? cameraTrack.getCapabilities() : {};
+      if(capabilities.focusMode && capabilities.focusMode.indexOf("continuous") !== -1){
+        await cameraTrack.applyConstraints({
+          advanced:[{focusMode:"continuous"}]
+        });
+      }else{
+        // En dispositivos que no exponen focusMode, un pequeño reinicio
+        // de reproducción puede ayudar a que Safari vuelva a enfocar.
+        var video = getReaderEl().querySelector("video");
+        if(video){
+          video.pause();
+          await video.play().catch(function(){});
+        }
+      }
+    }catch(e){
+      console.debug("No se pudo reenfocar:", e);
+    }
+  }
+
+  async function toggleTorch(){
+    if(!cameraTrack || !cameraTrack.getCapabilities) return;
+
+    var capabilities = cameraTrack.getCapabilities();
+    if(!capabilities.torch) return;
+
+    torchOn = !torchOn;
+
+    try{
+      await cameraTrack.applyConstraints({
+        advanced:[{torch:torchOn}]
+      });
+      $("btnTorch").textContent = torchOn ? "💡 Luz: ON" : "💡 Luz";
+    }catch(e){
+      torchOn = !torchOn;
+      console.debug("Linterna no disponible:", e);
+    }
+  }
+
+  function validEAN13(code){
+    var value = String(code || "").replace(/\s/g,"");
+
+    if(!/^\d{13}$/.test(value)) return false;
+
+    // Validación EAN-13 del dígito verificador.
+    var sum = 0;
+    for(var i = 0; i < 12; i++){
+      var digit = Number(value.charAt(i));
+      sum += (i % 2 === 0) ? digit : digit * 3;
+    }
+
+    var checkDigit = (10 - (sum % 10)) % 10;
+    return checkDigit === Number(value.charAt(12));
+  }
+
+  function handleDecodedResult(result){
+    if(!result) return;
+
+    var decodedText = result.getText ? result.getText() : String(result.text || result);
+    decodedText = String(decodedText || "").replace(/\s/g,"");
+
+    if(!decodedText) return;
+
+    // En iPhone aceptamos exclusivamente EAN-13.
+    if(isIOS()){
+      var formatOK = true;
+
+      try{
+        var barcodeFormat = result.getBarcodeFormat ? result.getBarcodeFormat() : null;
+        if(ZXingBrowser.BarcodeFormat && barcodeFormat !== null){
+          formatOK = barcodeFormat === ZXingBrowser.BarcodeFormat.EAN_13;
+        }
+      }catch(e){}
+
+      if(!formatOK || !validEAN13(decodedText)) return;
+    }
+
+    // Evita lecturas duplicadas del mismo frame/código.
+    var now = Date.now();
+    if(decodedText === lastDecodedText && (now - lastDecodedAt) < 1200){
+      return;
+    }
+
+    lastDecodedText = decodedText;
+    lastDecodedAt = now;
+
+    if(navigator.vibrate){
+      try{ navigator.vibrate(70); }catch(e){}
+    }
+
+    afterScan(decodedText);
+  }
+
+  async function startScanning(){
+    if(scanning) return;
+
+    var readerEl = getReaderEl();
+    readerEl.innerHTML = "";
+
+    var video = document.createElement("video");
+    video.setAttribute("playsinline", "true");
+    video.setAttribute("webkit-playsinline", "true");
+    video.setAttribute("autoplay", "true");
+    video.setAttribute("muted", "true");
+    video.muted = true;
+    video.playsInline = true;
+    video.style.width = "100%";
+    video.style.height = "100%";
+    video.style.display = "block";
+    video.style.objectFit = "cover";
+    video.style.background = "#000";
+    readerEl.appendChild(video);
+
+    // Android (y cualquier navegador con lector nativo): camino rápido con aceleración
+    // por hardware, igual que antes de que existiera el ajuste especial para iPhone.
+    if(supportsNativeDetector()){
+      try{
+        await startNativeScan(video);
+        if($("cameraTools")){ $("cameraTools").style.display = "flex"; }
+        return;
+      }catch(err){
+        console.debug("Lector nativo no disponible, uso ZXing como respaldo:", err);
+        usingNative = false;
+        readerEl.innerHTML = "";
+        readerEl.appendChild(video);
+      }
+    }
+
+    if(typeof ZXingBrowser === "undefined" || !ZXingBrowser.BrowserMultiFormatReader){
+      alert("No se pudo cargar el lector de códigos. Revisá tu conexión a internet.");
+      return;
+    }
+
+    /*
+      Android sin lector nativo / navegadores viejos:
+      - Se acota a los formatos de barras que realmente usamos (más rápido
+        que dejar que ZXing pruebe todos los formatos posibles en cada frame).
+
+      iPhone/iPad:
+      - Se limita REALMENTE a EAN-13 usando possibleFormats.
+      - Esto evita que ZXing pruebe QR, Code128, Code39, etc.
+      - @zxing/browser 0.1.5 expone BarcodeFormat y BrowserMultiFormatReader.
+    */
+    zxingReader = new ZXingBrowser.BrowserMultiFormatReader();
+
+    if(ZXingBrowser.BarcodeFormat){
+      try{
+        if(isIOS()){
+          zxingReader.possibleFormats = [ ZXingBrowser.BarcodeFormat.EAN_13 ];
+        } else {
+          zxingReader.possibleFormats = [
+            ZXingBrowser.BarcodeFormat.EAN_13, ZXingBrowser.BarcodeFormat.EAN_8,
+            ZXingBrowser.BarcodeFormat.UPC_A, ZXingBrowser.BarcodeFormat.UPC_E,
+            ZXingBrowser.BarcodeFormat.CODE_128, ZXingBrowser.BarcodeFormat.CODE_39,
+            ZXingBrowser.BarcodeFormat.CODABAR, ZXingBrowser.BarcodeFormat.ITF,
+            ZXingBrowser.BarcodeFormat.QR_CODE
+          ];
+        }
+      }catch(e){
+        console.debug("No se pudo limitar los formatos de ZXing:", e);
+      }
+    }
+
+    var constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 },
+        frameRate: { ideal: 30, max: 30 }
+      }
+    };
+
+    // En iPhone damos un poco más de prioridad a la cámara trasera.
+    if(isIOS()){
+      constraints.video.facingMode = { exact: "environment" };
+    }
+
+    try{
+      var controls = await zxingReader.decodeFromConstraints(
+        constraints,
+        video,
+        function onDecode(result, error){
+          if(result){
+            handleDecodedResult(result);
+          }
+        }
+      );
+
+      zxingControls = controls;
+      scanning = true;
+
+      $("btnStartScan").style.display = "none";
+      $("btnStopScan").style.display = "block";
+
+      if(isIOS()){
+        $("cameraTools").style.display = "flex";
+      }
+
+      // Esperamos a que Safari tenga un track real antes de tocar el foco.
+      var setupCamera = async function(){
+        if(!video.srcObject) return;
+
+        cameraTrack = getCameraTrack(video);
+        await applyCameraOptimizations(video);
+
+        // Un pequeño delay ayuda a que el autofocus de iPhone tome el código.
+        setTimeout(function(){
+          refocusCamera();
+        }, 350);
+      };
+
+      if(video.readyState >= 2){
+        setupCamera();
+      }else{
+        video.addEventListener("loadedmetadata", setupCamera, {once:true});
+      }
+
+    }catch(err){
+      scanning = false;
+      zxingControls = null;
+      cameraTrack = null;
+      readerEl.innerHTML = "";
+
+      console.error("Error iniciando ZXing:", err);
+
+      var message = "No se pudo acceder a la cámara.";
+
+      if(err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")){
+        message += " Revisá que Safari tenga permitido el acceso a la cámara.";
+      }else if(err && (err.name === "NotFoundError" || err.name === "DevicesNotFoundError")){
+        message += " No se encontró una cámara compatible.";
+      }else{
+        message += " Revisá que la página esté abierta por HTTPS y que hayas dado permiso de cámara.";
+      }
+
+      alert(message);
+    }
+  }
+
+  function stopScanning(){
+    usingNative = false;
+
+    if(nativeRafId){
+      try{ cancelAnimationFrame(nativeRafId); }catch(e){}
+      nativeRafId = null;
+    }
+    if(nativeStream){
+      try{ nativeStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+      nativeStream = null;
+    }
+    nativeDetector = null;
+
+    if(zxingControls){
+      try{ zxingControls.stop(); }catch(e){}
+      zxingControls = null;
+    }
+
+    // Detención explícita del MediaStream para que el indicador de cámara
+    // de iPhone/Android se apague inmediatamente.
+    if(cameraTrack){
+      try{ cameraTrack.stop(); }catch(e){}
+      cameraTrack = null;
+    }
+
+    var readerEl = getReaderEl();
+    if(readerEl){
+      var video = readerEl.querySelector("video");
+      if(video && video.srcObject){
+        try{
+          video.srcObject.getTracks().forEach(function(track){
+            try{ track.stop(); }catch(e){}
+          });
+        }catch(e){}
+        video.srcObject = null;
+      }
+      readerEl.innerHTML = "";
+    }
+
+    if(zxingReader){
+      try{ zxingReader.reset(); }catch(e){}
+      zxingReader = null;
+    }
+
+    scanning = false;
+    torchOn = false;
+
+    $("btnStartScan").style.display = "block";
+    $("btnStopScan").style.display = "none";
+
+    if($("cameraTools")){
+      $("cameraTools").style.display = "none";
+    }
+    if($("btnTorch")){
+      $("btnTorch").textContent = "💡 Luz";
+    }
+
+    scanTarget = "search";
+    reservaSyncScanUi();
+  }
+
+  function goHome(){
+    if(scanning) stopScanning();
+    if(currentUserProfile && currentUserProfile.rol === "admin"){
+      showScreen("screen-admin");
+      renderAdminPanel();
+      return;
+    }
+    if(!currentUserProfile){
+      return; // todavía no hay sesión, el header no debe navegar
+    }
+    var manualEl = $("manualCode");
+    if(manualEl) manualEl.value = "";
+    var resultEl = $("resultCard");
+    if(resultEl) resultEl.style.display = "none";
+    var sampleEl = $("sampleBanner");
+    if(sampleEl) sampleEl.style.display = "none";
+    var sortWrapEl = $("sortWrap");
+    if(sortWrapEl) sortWrapEl.style.display = "none";
+    lastSearchItems = [];
+    showScreen("screen-scan");
+  }
+
+  var appHeaderEl = $("appHeader");
+  if(appHeaderEl){
+    appHeaderEl.addEventListener("click", goHome);
+    appHeaderEl.addEventListener("keydown", function(e){
+      if(e.target && e.target.closest && e.target.closest("#menuWrap")) return;
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); goHome(); }
+    });
+  }
+
+  // ---------- Inicio ----------
+  if(isIOS()){
+    var iosHintEl = $("iosHint");
+    if(iosHintEl) iosHintEl.style.display = "block";
+  }
+
+  function hideSplash(){
+    var splash = $("splash");
+    splash.classList.add("hide");
+    setTimeout(function(){ splash.style.display = "none"; }, 500);
+  }
+
+  var splashDone = false;
+  var minSplashWait = sleep(1200);
+
+  auth.onAuthStateChanged(function(user){
+    Promise.all([handleAuthChange(user), minSplashWait]).then(function(){
+      if(!splashDone){
+        splashDone = true;
+        hideSplash();
+      }
+    });
+  });
+
+  // Por si algo tarda de más (sin conexión, etc.), no dejamos el splash trabado.
+  setTimeout(function(){
+    if(!splashDone){ splashDone = true; hideSplash(); }
+  }, 8000);
+
+})();
+</script>
+
+</body>
+</html>
